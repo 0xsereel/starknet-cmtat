@@ -3,13 +3,11 @@
 
 #[cfg(test)]
 mod cmtat_tests {
-    use super::super::contracts::{
+    use cairo_cmtat::contracts::{
         standard_cmtat::{StandardCMTAT, IStandardCMTATDispatcher, IStandardCMTATDispatcherTrait},
         debt_cmtat::{DebtCMTAT, IDebtCMTATDispatcher, IDebtCMTATDispatcherTrait},
-        allowlist_cmtat::{AllowlistCMTAT, IAllowlistCMTATDispatcher, IAllowlistCMTATDispatcherTrait},
         light_cmtat::{LightCMTAT, ILightCMTATDispatcher, ILightCMTATDispatcherTrait},
     };
-    use super::super::interfaces::icmtat::{ICMTAT, ICMTATExtended, TokenType};
     use starknet::{
         ContractAddress, contract_address_const, deploy_syscall, get_caller_address,
         testing::{set_caller_address, set_block_timestamp}
