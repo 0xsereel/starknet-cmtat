@@ -1,22 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 // Cairo CMTAT Implementation Library
 
-// Working CMTAT implementation
-pub mod working_cmtat;
-
 // CMTAT interfaces
 pub mod interfaces {
     pub mod icmtat;
 }
 
-// CMTAT contract implementations - All working and deployable
+// CMTAT contract implementations - Production ready contracts
 pub mod contracts {
     pub mod standard_cmtat;
     pub mod light_cmtat;
     pub mod debt_cmtat;
-    pub mod snapshot_demo;
-    mod snapshot_recorder;
-    mod test_snapshot_engine;
 }
 
 // CMTAT engines - Rule and Snapshot engines
