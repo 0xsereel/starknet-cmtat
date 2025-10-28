@@ -17,6 +17,12 @@ pub trait ISnapshotEngine<TContractState> {
     /// Create a new snapshot
     fn schedule_snapshot(ref self: TContractState, timestamp: u64) -> u64;
     
+    /// Set the authorized token contract
+    fn set_token_contract(ref self: TContractState, new_token_contract: ContractAddress);
+    
+    /// Get the authorized token contract
+    fn get_token_contract(self: @TContractState) -> ContractAddress;
+    
     /// Get snapshot by ID
     fn get_snapshot(self: @TContractState, snapshot_id: u64) -> Snapshot;
     
@@ -129,6 +135,15 @@ mod SimpleSnapshotEngine {
             self.emit(SnapshotScheduled { snapshot_id, timestamp });
             
             snapshot_id
+        }
+
+        fn set_token_contract(ref self: ContractState, new_token_contract: ContractAddress) {
+            self.ownable.assert_only_owner();
+            self.token_contract.write(new_token_contract);
+        }
+
+        fn get_token_contract(self: @ContractState) -> ContractAddress {
+            self.token_contract.read()
         }
 
         fn get_snapshot(self: @ContractState, snapshot_id: u64) -> Snapshot {

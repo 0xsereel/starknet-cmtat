@@ -2,13 +2,16 @@
 // Debt CMTAT Implementation - For Debt Instruments
 
 use starknet::ContractAddress;
+use cairo_cmtat::engines::rule_engine::{IRuleEngineDispatcher, IRuleEngineDispatcherTrait};
+use cairo_cmtat::engines::snapshot_engine::{ISnapshotEngineDispatcher, ISnapshotEngineDispatcherTrait, ISnapshotRecordingDispatcher, ISnapshotRecordingDispatcherTrait};
 
 #[starknet::contract]
 mod DebtCMTAT {
-    use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
+    use openzeppelin::token::erc20::{ERC20Component};
     use openzeppelin::access::accesscontrol::{AccessControlComponent, DEFAULT_ADMIN_ROLE};
     use openzeppelin::introspection::src5::SRC5Component;
     use starknet::{ContractAddress, get_caller_address};
+    use super::{IRuleEngineDispatcher, IRuleEngineDispatcherTrait, ISnapshotEngineDispatcher, ISnapshotEngineDispatcherTrait, ISnapshotRecordingDispatcher, ISnapshotRecordingDispatcherTrait};
 
     component!(path: ERC20Component, storage: erc20, event: ERC20Event);
     component!(path: AccessControlComponent, storage: access_control, event: AccessControlEvent);
@@ -36,6 +39,9 @@ mod DebtCMTAT {
         src5: SRC5Component::Storage,
         terms: felt252,
         flag: felt252,
+        // Engine integration
+        rule_engine: ContractAddress,
+        snapshot_engine: ContractAddress,
         // Debt-specific fields
         isin: ByteArray,
         maturity_date: u64,
@@ -129,7 +135,9 @@ mod DebtCMTAT {
         isin: ByteArray,
         maturity_date: u64,
         interest_rate: u256,
-        par_value: u256
+        par_value: u256,
+        rule_engine: ContractAddress,
+        snapshot_engine: ContractAddress
     ) {
         self.erc20.initializer(name, symbol);
         self.access_control.initializer();
@@ -141,6 +149,8 @@ mod DebtCMTAT {
 
         self.terms.write(terms);
         self.flag.write(flag);
+        self.rule_engine.write(rule_engine);
+        self.snapshot_engine.write(snapshot_engine);
         self.isin.write(isin);
         self.maturity_date.write(maturity_date);
         self.interest_rate.write(interest_rate);
@@ -262,6 +272,122 @@ mod DebtCMTAT {
         fn token_type(self: @ContractState) -> ByteArray {
             "Debt CMTAT"
         }
+
+        // Engine management functions
+        fn get_rule_engine(self: @ContractState) -> ContractAddress {
+            self.rule_engine.read()
+        }
+
+        fn set_rule_engine(ref self: ContractState, new_engine: ContractAddress) {
+            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
+            self.rule_engine.write(new_engine);
+        }
+
+        fn get_snapshot_engine(self: @ContractState) -> ContractAddress {
+            self.snapshot_engine.read()
+        }
+
+        fn set_snapshot_engine(ref self: ContractState, new_engine: ContractAddress) {
+            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
+            self.snapshot_engine.write(new_engine);
+        }
+
+        // Transfer restriction checking (ERC-1404 compatible)
+        fn detect_transfer_restriction(
+            self: @ContractState,
+            from: ContractAddress,
+            to: ContractAddress,
+            amount: u256
+        ) -> u8 {
+            // Check if addresses are frozen
+            if self.is_frozen(from) || self.is_frozen(to) {
+                return 1; // Address frozen
+            }
+
+            // Check rule engine if configured
+            let rule_engine_addr = self.rule_engine.read();
+            if rule_engine_addr != starknet::contract_address_const::<0>() {
+                let rule_engine = IRuleEngineDispatcher { contract_address: rule_engine_addr };
+                let restriction = rule_engine.detect_transfer_restriction(from, to, amount);
+                if restriction != 0 {
+                    return restriction;
+                }
+            }
+
+            0 // No restriction
+        }
+
+        fn message_for_restriction_code(self: @ContractState, restriction_code: u8) -> ByteArray {
+            if restriction_code == 1 {
+                return "Address is frozen";
+            }
+
+            let rule_engine_addr = self.rule_engine.read();
+            if rule_engine_addr != starknet::contract_address_const::<0>() {
+                let rule_engine = IRuleEngineDispatcher { contract_address: rule_engine_addr };
+                return rule_engine.message_for_restriction_code(restriction_code);
+            }
+
+            "Unknown restriction"
+        }
+
+        // Snapshot functionality
+        fn schedule_snapshot(ref self: ContractState, timestamp: u64) -> u64 {
+            self.access_control.assert_only_role(DEBT_ROLE);
+            let snapshot_engine_addr = self.snapshot_engine.read();
+            assert(snapshot_engine_addr != starknet::contract_address_const::<0>(), 'No snapshot engine');
+            
+            let snapshot_engine = ISnapshotEngineDispatcher { contract_address: snapshot_engine_addr };
+            snapshot_engine.schedule_snapshot(timestamp)
+        }
+
+        fn record_snapshot(ref self: ContractState, snapshot_id: u64) {
+            self.access_control.assert_only_role(DEBT_ROLE);
+            let snapshot_engine_addr = self.snapshot_engine.read();
+            assert(snapshot_engine_addr != starknet::contract_address_const::<0>(), 'No snapshot engine');
+            
+            let snapshot_recording = ISnapshotRecordingDispatcher { contract_address: snapshot_engine_addr };
+            let total_supply = self.erc20.total_supply();
+            snapshot_recording.record_snapshot(snapshot_id, total_supply);
+        }
+    }
+
+    // Internal transfer hook implementation
+    impl ERC20HooksImpl of ERC20Component::ERC20HooksTrait<ContractState> {
+        fn before_update(
+            ref self: ERC20Component::ComponentState<ContractState>,
+            from: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256
+        ) {
+            let contract_state = ERC20Component::HasComponent::get_contract(@self);
+
+            // Skip checks for mint/burn (zero addresses)
+            if from != starknet::contract_address_const::<0>() && recipient != starknet::contract_address_const::<0>() {
+                // Check transfer restrictions
+                let restriction = contract_state.detect_transfer_restriction(from, recipient, amount);
+                assert(restriction == 0, 'Transfer restricted');
+            }
+        }
+
+        fn after_update(
+            ref self: ERC20Component::ComponentState<ContractState>,
+            from: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256
+        ) {
+            let mut contract_state = ERC20Component::HasComponent::get_contract_mut(ref self);
+
+            // Skip for mint/burn operations
+            if from != starknet::contract_address_const::<0>() && recipient != starknet::contract_address_const::<0>() {
+                // Notify rule engine
+                let rule_engine_addr = contract_state.rule_engine.read();
+                if rule_engine_addr != starknet::contract_address_const::<0>() {
+                    let mut rule_engine = IRuleEngineDispatcher { contract_address: rule_engine_addr };
+                    rule_engine.on_transfer_executed(from, recipient, amount);
+                }
+            }
+        }
     }
 }
 
@@ -288,4 +414,15 @@ trait IDebtCMTAT<TContractState> {
     fn get_credit_event_type(self: @TContractState) -> ByteArray;
     fn set_credit_event(ref self: TContractState, event_type: ByteArray, occurred: bool);
     fn token_type(self: @TContractState) -> ByteArray;
+    // Engine management
+    fn get_rule_engine(self: @TContractState) -> ContractAddress;
+    fn set_rule_engine(ref self: TContractState, new_engine: ContractAddress);
+    fn get_snapshot_engine(self: @TContractState) -> ContractAddress;
+    fn set_snapshot_engine(ref self: TContractState, new_engine: ContractAddress);
+    // Transfer restrictions (ERC-1404)
+    fn detect_transfer_restriction(self: @TContractState, from: ContractAddress, to: ContractAddress, amount: u256) -> u8;
+    fn message_for_restriction_code(self: @TContractState, restriction_code: u8) -> ByteArray;
+    // Snapshot functionality
+    fn schedule_snapshot(ref self: TContractState, timestamp: u64) -> u64;
+    fn record_snapshot(ref self: TContractState, snapshot_id: u64);
 }
