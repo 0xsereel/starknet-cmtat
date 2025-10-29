@@ -1,248 +1,184 @@
 #!/bin/bash
 
-# CMTAT ERC20 Deployment Script
-# This script deploys the ERC20 token to Starknet and returns the block explorer URL
+# Cairo CMTAT Quick Deploy Script
+# Deploys the complete CMTAT ecosystem on Starknet Sepolia
+# Uses proven deployment patterns and known working configurations
 
 set -e
 
-# Load environment variables from .env file if it exists
-if [ -f .env ]; then
-    export $(cat .env | grep -v '^#' | xargs)
-fi
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-echo -e "${BLUE}================================================${NC}"
-echo -e "${BLUE}   CMTAT ERC20 Token Deployment Script${NC}"
-echo -e "${BLUE}================================================${NC}"
+echo "=== Cairo CMTAT Quick Deploy ==="
+echo "Network: sepolia"
+echo "Admin: 0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50"
 echo ""
 
-# Check if starkli is installed
-if ! command -v starkli &> /dev/null; then
-    echo -e "${RED}Error: starkli is not installed${NC}"
-    echo "Please install starkli: curl https://get.starkli.sh | sh"
-    exit 1
-fi
-
-# Network selection
-echo -e "${YELLOW}Select network:${NC}"
-echo "1) Sepolia Testnet (default)"
-echo "2) Mainnet"
-read -p "Enter choice [1-2] (default: 1): " network_choice
-network_choice=${network_choice:-1}
-
-case $network_choice in
-    1)
-        NETWORK="sepolia"
-        RPC_URL="${ALCHEMY_RPC_URL_SEPOLIA}"
-        EXPLORER_URL="https://sepolia.voyager.online"
-        echo -e "${GREEN}Selected: Sepolia Testnet${NC}"
-        ;;
-    2)
-        NETWORK="mainnet"
-        RPC_URL="${ALCHEMY_RPC_URL_MAINNET:-https://starknet-mainnet.public.blastapi.io}"
-        EXPLORER_URL="https://voyager.online"
-        echo -e "${GREEN}Selected: Mainnet${NC}"
-        ;;
-    *)
-        echo -e "${RED}Invalid choice. Defaulting to Sepolia Testnet${NC}"
-        NETWORK="sepolia"
-        RPC_URL="${ALCHEMY_RPC_URL_SEPOLIA}"
-        EXPLORER_URL="https://sepolia.voyager.online"
-        ;;
-esac
-
-# Check if RPC URL is set
-if [ -z "$RPC_URL" ]; then
-    echo -e "${RED}Error: RPC URL not found. Please set ALCHEMY_RPC_URL_SEPOLIA in .env file${NC}"
-    exit 1
-fi
-
-echo ""
-
-# Get recipient address
-read -p "Enter recipient address for initial token supply: " RECIPIENT
-if [ -z "$RECIPIENT" ]; then
-    echo -e "${RED}Error: Recipient address is required${NC}"
-    exit 1
-fi
-
-# Get account details
-read -p "Enter path to your account config file (e.g., ~/.starknet-accounts/account.json): " ACCOUNT_FILE
-if [ -z "$ACCOUNT_FILE" ]; then
-    echo -e "${RED}Error: Account file path is required${NC}"
-    exit 1
-fi
-
-if [ ! -f "$ACCOUNT_FILE" ]; then
-    echo -e "${RED}Error: Account file not found at $ACCOUNT_FILE${NC}"
-    exit 1
-fi
-
-read -p "Enter path to your keystore file (e.g., ~/.starknet-wallets/keystore.json): " KEYSTORE_PATH
-if [ -z "$KEYSTORE_PATH" ]; then
-    echo -e "${RED}Error: Keystore path is required${NC}"
-    exit 1
-fi
-
-if [ ! -f "$KEYSTORE_PATH" ]; then
-    echo -e "${RED}Error: Keystore file not found at $KEYSTORE_PATH${NC}"
-    exit 1
-fi
-
-echo ""
-echo -e "${BLUE}Step 1: Building the contract...${NC}"
+# Build contracts
+echo "=== Building contracts ==="
 scarb build
-
-if [ ! -f "target/dev/cairo_cmtat_erc20_CMTAT_ERC20.contract_class.json" ]; then
-    echo -e "${RED}Error: Contract class file not found after build${NC}"
-    exit 1
-fi
-
-echo -e "${GREEN}✓ Contract built successfully${NC}"
+echo "✅ Build complete"
 echo ""
 
-echo -e "${BLUE}Step 2: Declaring the contract class...${NC}"
-# Run declare command and save output to temporary file
-starkli declare \
-    target/dev/cairo_cmtat_erc20_CMTAT_ERC20.contract_class.json \
-    --rpc $RPC_URL \
-    --account $ACCOUNT_FILE \
-    --keystore $KEYSTORE_PATH 2>&1 | tee /tmp/declare_output.txt
+# Deploy Rule Engine
+echo "=== Deploying Rule Engine ==="
+echo "Class Hash: 0x05fd8bb77a68906ee3c78ac8e9e2d66b6b9a6f66b4c6becd2a481c2e52f2b0fd"
 
-# Check for errors in declare output
-if grep -q "Error:" /tmp/declare_output.txt || grep -q "exceed balance" /tmp/declare_output.txt; then
-    echo ""
-    echo -e "${RED}Error: Declaration failed!${NC}"
-    echo -e "${YELLOW}Output from declare command:${NC}"
-    cat /tmp/declare_output.txt
-    echo ""
-    echo -e "${YELLOW}Possible solutions:${NC}"
-    echo "1. Add more STRK to your account (you need ~0.1-0.2 STRK for declaration)"
-    echo "2. The class may already be declared - you can continue with the existing class hash"
-    echo ""
-    read -p "Enter class hash to continue (or press Ctrl+C to exit): " CLASS_HASH
-    if [ -z "$CLASS_HASH" ]; then
-        echo -e "${RED}Error: Class hash is required${NC}"
-        exit 1
-    fi
+RULE_ENGINE=$(starkli deploy \
+  0x05fd8bb77a68906ee3c78ac8e9e2d66b6b9a6f66b4c6becd2a481c2e52f2b0fd \
+  --account ~/.starkli-wallets/deployer/account.json \
+  --keystore ~/.starkli-wallets/deployer/keystore.json \
+  --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
+  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 | grep "Contract deployed:" | cut -d' ' -f3)
+
+if [ -z "$RULE_ENGINE" ]; then
+    echo "❌ Failed to deploy Rule Engine"
+    exit 1
+fi
+echo "✅ Rule Engine: $RULE_ENGINE"
+
+# Deploy Snapshot Engine
+echo ""
+echo "=== Deploying Snapshot Engine ==="
+echo "Class Hash: 0x0019f4eaac8c4b0e5c2b9ca55be9b5cc9df16ee4f31c25ff2f5bc87000a3b4bf"
+
+SNAPSHOT_ENGINE=$(starkli deploy \
+  0x0019f4eaac8c4b0e5c2b9ca55be9b5cc9df16ee4f31c25ff2f5bc87000a3b4bf \
+  --account ~/.starkli-wallets/deployer/account.json \
+  --keystore ~/.starkli-wallets/deployer/keystore.json \
+  --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
+  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 | grep "Contract deployed:" | cut -d' ' -f3)
+
+if [ -z "$SNAPSHOT_ENGINE" ]; then
+    echo "❌ Failed to deploy Snapshot Engine"
+    exit 1
+fi
+echo "✅ Snapshot Engine: $SNAPSHOT_ENGINE"
+
+# Deploy Standard CMTAT
+echo ""
+echo "=== Deploying Standard CMTAT ==="
+echo "Class Hash: 0x0156438638cbac97e09e5781c66d4e23092d43b85c94286d11578f6b604a6463"
+echo "Using ByteArray encoding: name='Standard CMTAT', symbol='SCMTAT', version='V0.0.0'"
+
+STANDARD_CMTAT=$(starkli deploy \
+  0x0156438638cbac97e09e5781c66d4e23092d43b85c94286d11578f6b604a6463 \
+  --account ~/.starkli-wallets/deployer/account.json \
+  --keystore ~/.starkli-wallets/deployer/keystore.json \
+  --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
+  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 \
+  0 0x5374616e6461726420434d544154 14 \
+  0 0x53434d544154 7 \
+  0 0x56302e302e30 6 \
+  18 \
+  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 \
+  "$RULE_ENGINE" \
+  "$SNAPSHOT_ENGINE" | grep "Contract deployed:" | cut -d' ' -f3)
+
+if [ -z "$STANDARD_CMTAT" ]; then
+    echo "❌ Failed to deploy Standard CMTAT"
+    STANDARD_CMTAT="DEPLOY_MANUALLY"
 else
-    # Extract class hash from output file (compatible with macOS grep)
-    CLASS_HASH=$(grep "Class hash declared:" /tmp/declare_output.txt | grep -o '0x[a-fA-F0-9]\{64\}' | head -1)
-
-    if [ -z "$CLASS_HASH" ]; then
-        CLASS_HASH=$(grep "Class hash:" /tmp/declare_output.txt | grep -o '0x[a-fA-F0-9]\{64\}' | head -1)
-    fi
-
-    if [ -z "$CLASS_HASH" ]; then
-        # Try to find the declaring class hash from the output
-        CLASS_HASH=$(grep "Declaring Cairo 1 class:" /tmp/declare_output.txt | grep -o '0x[a-fA-F0-9]\{64\}' | head -1)
-    fi
-
-    if [ -z "$CLASS_HASH" ]; then
-        echo ""
-        echo -e "${YELLOW}Note: Could not extract class hash from output.${NC}"
-        echo -e "${YELLOW}Output from declare command:${NC}"
-        cat /tmp/declare_output.txt
-        echo ""
-        read -p "Please enter the class hash manually (or press Ctrl+C to exit): " CLASS_HASH
-        if [ -z "$CLASS_HASH" ]; then
-            echo -e "${RED}Error: Class hash is required${NC}"
-            exit 1
-        fi
-    fi
+    echo "✅ Standard CMTAT: $STANDARD_CMTAT"
 fi
 
+# Deploy Light CMTAT
 echo ""
-echo -e "${GREEN}✓ Class hash: $CLASS_HASH${NC}"
-echo ""
+echo "=== Deploying Light CMTAT ==="
+echo "Class Hash: 0x0040ce9334f9146f53e6e32c7b8fe9644cc5d6cece7507768cdbfecbf57b27f1"
+echo "Using ByteArray encoding: name='Light CMTAT', symbol='LCMTAT', version='V0.0.0'"
 
-echo -e "${BLUE}Step 3: Deploying the contract...${NC}"
-# Run deploy command and save output to temporary file
-starkli deploy \
-    $CLASS_HASH \
-    $RECIPIENT \
-    --rpc $RPC_URL \
-    --account $ACCOUNT_FILE \
-    --keystore $KEYSTORE_PATH 2>&1 | tee /tmp/deploy_output.txt
+LIGHT_CMTAT=$(starkli deploy \
+  0x0040ce9334f9146f53e6e32c7b8fe9644cc5d6cece7507768cdbfecbf57b27f1 \
+  --account ~/.starkli-wallets/deployer/account.json \
+  --keystore ~/.starkli-wallets/deployer/keystore.json \
+  --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
+  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 \
+  0 0x4c6967687420434d544154 12 \
+  0 0x4c434d544154 7 \
+  0 0x56302e302e30 6 \
+  18 \
+  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 \
+  "$RULE_ENGINE" \
+  "$SNAPSHOT_ENGINE" | grep "Contract deployed:" | cut -d' ' -f3)
 
-# Store the exit code
-DEPLOY_EXIT_CODE=$?
-
-# Check for errors in the output
-if grep -q "Error:" /tmp/deploy_output.txt; then
-    echo ""
-    echo -e "${RED}Error: Deployment failed!${NC}"
-    echo -e "${YELLOW}Output from deploy command:${NC}"
-    cat /tmp/deploy_output.txt
-    echo ""
-    exit 1
+if [ -z "$LIGHT_CMTAT" ]; then
+    echo "❌ Failed to deploy Light CMTAT"
+    LIGHT_CMTAT="DEPLOY_MANUALLY"
+else
+    echo "✅ Light CMTAT: $LIGHT_CMTAT"
 fi
 
-# Extract contract address from output file (compatible with macOS grep)
-# First try "Contract deployed:" message
-CONTRACT_ADDRESS=$(grep "Contract deployed:" /tmp/deploy_output.txt | grep -o '0x[a-fA-F0-9]\{64\}' | head -1)
-
-# If not found, try "will be deployed at address" message (predicted address)
-if [ -z "$CONTRACT_ADDRESS" ]; then
-    CONTRACT_ADDRESS=$(grep "will be deployed at address" /tmp/deploy_output.txt | grep -o '0x[a-fA-F0-9]\{64\}' | head -1)
-fi
-
-# If still not found, try to extract from transaction receipt
-if [ -z "$CONTRACT_ADDRESS" ]; then
-    CONTRACT_ADDRESS=$(grep "contract_address" /tmp/deploy_output.txt | grep -o '0x[a-fA-F0-9]\{64\}' | head -1)
-fi
-
-if [ -z "$CONTRACT_ADDRESS" ]; then
-    echo ""
-    echo -e "${YELLOW}Note: Could not extract contract address from output.${NC}"
-    echo -e "${YELLOW}Output from deploy command:${NC}"
-    cat /tmp/deploy_output.txt
-    echo ""
-    read -p "Please enter the contract address manually (or press Ctrl+C to exit): " CONTRACT_ADDRESS
-    if [ -z "$CONTRACT_ADDRESS" ]; then
-        echo -e "${RED}Error: Contract address is required${NC}"
-        exit 1
-    fi
-fi
-
+# Deploy Debt CMTAT
 echo ""
-echo -e "${GREEN}✓ Contract deployed successfully!${NC}"
-echo ""
+echo "=== Deploying Debt CMTAT ==="
+echo "Class Hash: 0x073df1d757f9927b737ae61d1b350aeefa4df2bf1cfc73c47c017b9e80e246e7"
+echo "Using ByteArray encoding: name='Debt CMTAT', symbol='DCMTAT', version='V0.0.0'"
 
-# Display results
-echo -e "${BLUE}================================================${NC}"
-echo -e "${GREEN}   Deployment Successful!${NC}"
-echo -e "${BLUE}================================================${NC}"
-echo ""
-echo -e "${YELLOW}Network:${NC} $NETWORK"
-echo -e "${YELLOW}Contract Address:${NC} $CONTRACT_ADDRESS"
-echo -e "${YELLOW}Class Hash:${NC} $CLASS_HASH"
-echo -e "${YELLOW}Recipient:${NC} $RECIPIENT"
-echo ""
-echo -e "${GREEN}Block Explorer URL:${NC}"
-echo -e "${BLUE}$EXPLORER_URL/contract/$CONTRACT_ADDRESS${NC}"
-echo ""
-echo -e "${YELLOW}Transaction Hash:${NC}"
-echo -e "${BLUE}Check recent transactions from your deployer account${NC}"
-echo ""
-echo -e "${BLUE}================================================${NC}"
-
-# Save deployment info to file
-cat > deployment.json <<EOF
-{
-  "network": "$NETWORK",
-  "contract_address": "$CONTRACT_ADDRESS",
-  "class_hash": "$CLASS_HASH",
-  "recipient": "$RECIPIENT",
-  "explorer_url": "$EXPLORER_URL/contract/$CONTRACT_ADDRESS",
-  "deployed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+DEBT_CMTAT=$(starkli deploy \
+  0x073df1d757f9927b737ae61d1b350aeefa4df2bf1cfc73c47c017b9e80e246e7 \
+  --account ~/.starkli-wallets/deployer/account.json \
+  --keystore ~/.starkli-wallets/deployer/keystore.json \
+  --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
+  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 \
+  0 0x4465627420434d544154 11 \
+  0 0x44434d544154 7 \
+  0 0x56302e302e30 6 \
+  18 \
+  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 \
+  "$RULE_ENGINE" \
+  "$SNAPSHOT_ENGINE" | grep "Contract deployed:" | cut -d' ' -f3) || {
+    echo "⚠️  Debt CMTAT deployment may have timed out"
+    DEBT_CMTAT="DEPLOY_MANUALLY"
 }
+
+if [ "$DEBT_CMTAT" = "DEPLOY_MANUALLY" ]; then
+    echo "⚠️  Debt CMTAT deployment incomplete"
+    echo "    Manual deployment required or check existing deployment"
+else
+    echo "✅ Debt CMTAT: $DEBT_CMTAT"
+fi
+
+# Update .env file
+echo ""
+echo "=== Updating .env file ==="
+cat > .env << EOF
+# Cairo CMTAT Deployment Configuration
+# Generated on $(date)
+
+# Network Configuration
+NETWORK="sepolia"
+ADMIN_ADDR="0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50"
+
+# Engine Contracts
+RULE_ENGINE="$RULE_ENGINE"
+SNAPSHOT_ENGINE="$SNAPSHOT_ENGINE"
+
+# CMTAT Contracts
+STANDARD_CMTAT="$STANDARD_CMTAT"
+LIGHT_CMTAT="$LIGHT_CMTAT"
+DEBT_CMTAT="$DEBT_CMTAT"
 EOF
 
-echo -e "${GREEN}Deployment details saved to deployment.json${NC}"
+echo ""
+echo "🎉 Deployment Complete!"
+echo ""
+echo "=== Contract Addresses ==="
+echo "Rule Engine:     $RULE_ENGINE"
+echo "Snapshot Engine: $SNAPSHOT_ENGINE"
+echo "Standard CMTAT:  $STANDARD_CMTAT"
+echo "Light CMTAT:     $LIGHT_CMTAT"
+echo "Debt CMTAT:      $DEBT_CMTAT"
+echo ""
+echo "📄 Configuration saved to .env"
+echo ""
+if [[ "$STANDARD_CMTAT" == "DEPLOY_MANUALLY" || "$LIGHT_CMTAT" == "DEPLOY_MANUALLY" || "$DEBT_CMTAT" == "DEPLOY_MANUALLY" ]]; then
+    echo "⚠️  Note: Some contracts may need manual deployment"
+    echo "   Check the output above and deploy manually if needed"
+    echo "   Known working deployment addresses are in README.md"
+fi
+echo ""
+echo "🔗 View contracts on Starkscan:"
+echo "https://sepolia.starkscan.co/contract/[CONTRACT_ADDRESS]"
+echo ""
+echo "📋 Next steps:"
+echo "   1. source .env"
+echo "   2. ./scripts/test_deployment.sh"
+echo "   3. ./scripts/snapshot_demo.sh"

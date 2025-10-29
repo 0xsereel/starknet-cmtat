@@ -1,253 +1,155 @@
-# CMTAT ERC20 Token on Starknet
+# Cairo CMTAT - Regulated Securities on Starknet
 
-A production-ready ERC20 token implementation for Starknet using OpenZeppelin contracts. This project includes a comprehensive deployment script that automatically returns the block explorer URL upon successful deployment.
+A comprehensive implementation of CMTAT (Capital Markets and Technology Association Token) standard in Cairo for Starknet, featuring compliance engines for regulated securities.
 
 ## Features
 
-- ✅ Standard ERC20 token implementation
-- ✅ Built with OpenZeppelin Contracts for Cairo v0.13.0
-- ✅ Compatible with Cairo 2.6.3 and Scarb 2.6.4
-- ✅ Automated deployment script with block explorer URL
-- ✅ Support for both Sepolia Testnet and Mainnet
-- ✅ Initial supply of 1,000,000 tokens (18 decimals)
-- ✅ Deployment details saved to JSON file
-
-## Prerequisites
-
-Before you begin, ensure you have the following installed:
-
-1. **Scarb** - Cairo package manager
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh | sh
-   ```
-
-2. **Starkli** - Starknet CLI tool
-   ```bash
-   curl https://get.starkli.sh | sh
-   starkliup
-   ```
-
-3. **Starknet Account** - You need a funded account on either:
-   - Sepolia Testnet (recommended for testing)
-   - Mainnet (for production)
-
-## Project Structure
-
-```
-cairo-cmtat/
-├── Scarb.toml              # Project configuration
-├── src/
-│   └── lib.cairo           # ERC20 token contract
-├── scripts/
-│   └── deploy.sh           # Deployment script
-└── README.md               # This file
-```
+- ✅ **ERC20 Compliance** with regulatory extensions
+- ✅ **Role-Based Access Control** (Admin, Minter, Burner, Debt roles)
+- ✅ **Rule Engine** for transfer restrictions and whitelisting
+- ✅ **Snapshot Engine** for historical balance tracking
+- ✅ **Three Contract Variants**: Standard, Light, and Debt CMTAT
+- ✅ **OpenZeppelin Components** for security and reliability
 
 ## Quick Start
 
-### 1. Build the Contract
-
+### Prerequisites
 ```bash
+# Install Scarb (Cairo package manager)
+curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh | sh
+
+# Install Starkli (Starknet CLI)
+curl https://get.starkli.sh | sh
+starkliup
+```
+
+### Deploy
+```bash
+# Build contracts
 scarb build
-```
 
-This will compile the Cairo contract and generate the contract class JSON files in the `target/dev/` directory.
-
-### 2. Set Up Your Starknet Account
-
-If you don't have a Starknet account yet, create one using Starkli:
-
-```bash
-# Create a new account
-starkli account oz init ~/.starknet-accounts/account.json
-
-# Deploy the account (you'll need to fund it first)
-starkli account deploy ~/.starknet-accounts/account.json
-```
-
-### 3. Deploy the Token
-
-Run the deployment script:
-
-```bash
+# Deploy complete ecosystem
 ./scripts/deploy.sh
 ```
 
-The script will:
-1. Prompt you to select a network (Sepolia Testnet or Mainnet)
-2. Ask for the recipient address (who will receive the initial token supply)
-3. Request your account address and keystore path
-4. Build, declare, and deploy the contract
-5. Display the block explorer URL for your deployed contract
-6. Save deployment details to `deployment.json`
-
-## Deployment Script Details
-
-The deployment script (`scripts/deploy.sh`) provides:
-
-- **Interactive Network Selection**: Choose between Sepolia Testnet and Mainnet
-- **Automated Build Process**: Compiles the contract before deployment
-- **Class Declaration**: Declares the contract class on Starknet
-- **Contract Deployment**: Deploys the contract with the specified recipient
-- **Block Explorer Integration**: Returns the Voyager explorer URL for your contract
-- **Deployment Logging**: Saves all deployment details to `deployment.json`
-
-### Example Output
-
-```
-================================================
-   CMTAT ERC20 Token Deployment Script
-================================================
-
-Select network:
-1) Sepolia Testnet (default)
-2) Mainnet
-Enter choice [1-2] (default: 1): 1
-Selected: Sepolia Testnet
-
-Enter recipient address for initial token supply: 0x...
-Enter your account address: 0x...
-Enter path to your account keystore file: ~/.starknet-accounts/account.json
-
-Step 1: Building the contract...
-✓ Contract built successfully
-
-Step 2: Declaring the contract class...
-✓ Class hash: 0x...
-
-Step 3: Deploying the contract...
-✓ Contract deployed successfully!
-
-================================================
-   Deployment Successful!
-================================================
-
-Network: sepolia
-Contract Address: 0x...
-Class Hash: 0x...
-Recipient: 0x...
-
-Block Explorer URL:
-https://sepolia.voyager.online/contract/0x...
-
-Transaction Explorer:
-https://sepolia.voyager.online/tx/0x...
-
-================================================
-Deployment details saved to deployment.json
-```
-
-## Token Details
-
-- **Name**: CMTAT Token
-- **Symbol**: CMTAT
-- **Decimals**: 18 (standard)
-- **Initial Supply**: 1,000,000 tokens (1,000,000 × 10^18 in smallest unit)
-
-## Contract Interface
-
-The contract implements the standard ERC20 interface:
-
-- `name() -> felt252` - Returns the token name
-- `symbol() -> felt252` - Returns the token symbol
-- `decimals() -> u8` - Returns the number of decimals
-- `total_supply() -> u256` - Returns the total token supply
-- `balance_of(account: ContractAddress) -> u256` - Returns the balance of an account
-- `allowance(owner: ContractAddress, spender: ContractAddress) -> u256` - Returns the allowance
-- `transfer(recipient: ContractAddress, amount: u256) -> bool` - Transfers tokens
-- `transfer_from(sender: ContractAddress, recipient: ContractAddress, amount: u256) -> bool` - Transfers tokens from
-- `approve(spender: ContractAddress, amount: u256) -> bool` - Approves spending
-
-## Interacting with Your Deployed Token
-
-After deployment, you can interact with your token using Starkli:
-
-### Check Token Balance
-
+### Test
 ```bash
-starkli call <CONTRACT_ADDRESS> balance_of <ACCOUNT_ADDRESS> --rpc <RPC_URL>
+# Run contract tests
+scarb test
 ```
 
-### Transfer Tokens
+## Manual Deployment (if needed)
 
+If the automated deployment script has issues with the Debt CMTAT contract, you can deploy it manually:
+
+### Deploy Debt CMTAT Manually
 ```bash
-starkli invoke <CONTRACT_ADDRESS> transfer <RECIPIENT> <AMOUNT_LOW> <AMOUNT_HIGH> \
-  --account <YOUR_ACCOUNT> \
-  --keystore <KEYSTORE_PATH> \
-  --rpc <RPC_URL>
+# After running ./scripts/deploy.sh and sourcing .env
+source .env
+
+# Deploy Debt CMTAT with proper ByteArray encoding
+starkli deploy \
+  0x073df1d757f9927b737ae61d1b350aeefa4df2bf1cfc73c47c017b9e80e246e7 \
+  --account ~/.starkli-wallets/deployer/account.json \
+  --keystore ~/.starkli-wallets/deployer/keystore.json \
+  --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
+  $ADMIN_ADDR \
+  0 0x4465627420434d544154 11 \
+  0 0x44434d544154 7 \
+  0 0x56302e302e30 6 \
+  18 \
+  $ADMIN_ADDR \
+  $RULE_ENGINE \
+  $SNAPSHOT_ENGINE
 ```
 
-### Approve Spending
+**Parameters explained:**
+- `0x4465627420434d544154 11` = "Debt CMTAT" (ByteArray format)
+- `0x44434d544154 7` = "DCMTAT" (symbol)
+- `0x56302e302e30 6` = "V0.0.0" (version)
+- `18` = decimals
+- Uses existing `$RULE_ENGINE` and `$SNAPSHOT_ENGINE` from automated deployment
 
-```bash
-starkli invoke <CONTRACT_ADDRESS> approve <SPENDER> <AMOUNT_LOW> <AMOUNT_HIGH> \
-  --account <YOUR_ACCOUNT> \
-  --keystore <KEYSTORE_PATH> \
-  --rpc <RPC_URL>
+## Live Deployment (Starknet Sepolia)
+
+All contracts are deployed and ready for interaction:
+
+### Compliance Engines
+- **Rule Engine**: [`0x071b9729d9943a931ab7c068ced6c03ee178453bf63552a1c4969e0a7594e382`](https://sepolia.starkscan.co/contract/0x071b9729d9943a931ab7c068ced6c03ee178453bf63552a1c4969e0a7594e382)
+- **Snapshot Engine**: [`0x05b864c7eae89e9c740a5f5c24a87c4e194e0fb0381a4ac9152613e43718be83`](https://sepolia.starkscan.co/contract/0x05b864c7eae89e9c740a5f5c24a87c4e194e0fb0381a4ac9152613e43718be83)
+
+### CMTAT Tokens
+- **Standard CMTAT**: [`0x02145b0cf916124aa4955dd9b7c73631b5ec6411257d64d56efb8e05e242ecd9`](https://sepolia.starkscan.co/contract/0x02145b0cf916124aa4955dd9b7c73631b5ec6411257d64d56efb8e05e242ecd9)
+- **Light CMTAT**: [`0x057de503d9d662b1a212f6ed6279e2f65c722e9ce8e236d0cddc30339f74702e`](https://sepolia.starkscan.co/contract/0x057de503d9d662b1a212f6ed6279e2f65c722e9ce8e236d0cddc30339f74702e)
+- **Debt CMTAT**: [`0x00343aabb8312f3827c75130e9af815a9c853a0a60f7acf4772909624bbf5800`](https://sepolia.starkscan.co/contract/0x00343aabb8312f3827c75130e9af815a9c853a0a60f7acf4772909624bbf5800)
+
+## Architecture
+
+### Standard CMTAT
+Full-featured implementation with complete ERC20 functionality, compliance features, and engine integration.
+
+### Light CMTAT  
+Lightweight version with essential ERC20 and basic compliance features for minimal deployments.
+
+### Debt CMTAT
+Specialized for debt securities with ISIN tracking, maturity dates, and interest rate management.
+
+### Compliance Engines
+- **Rule Engine**: Controls transfer restrictions and address whitelisting
+- **Snapshot Engine**: Records historical balances for regulatory reporting
+- **Modular Design**: Engines can be shared across multiple CMTAT instances
+
+## Contract Structure
+
+```
+src/
+├── contracts/
+│   ├── standard_cmtat.cairo    # Full-featured CMTAT
+│   ├── light_cmtat.cairo       # Lightweight version  
+│   └── debt_cmtat.cairo        # Debt securities
+├── engines/
+│   ├── rule_engine.cairo       # Transfer restrictions
+│   └── snapshot_engine.cairo   # Balance snapshots
+└── interfaces/
+    └── icmtat.cairo            # Interface definitions
 ```
 
-## Block Explorer
+## Usage Example
 
-Once deployed, you can view your contract on Voyager:
+```cairo
+// Interact with deployed contracts
+let standard_cmtat = IStandardCMTATDispatcher { contract_address: standard_cmtat_address };
+let name = standard_cmtat.name();
+let balance = standard_cmtat.balance_of(user_address);
 
-- **Sepolia Testnet**: https://sepolia.voyager.online/contract/YOUR_CONTRACT_ADDRESS
-- **Mainnet**: https://voyager.online/contract/YOUR_CONTRACT_ADDRESS
+// Use rule engine for compliance
+let rule_engine = IRuleEngineDispatcher { contract_address: rule_engine_address };
+let restriction_code = rule_engine.detect_transfer_restriction(from, to, amount);
 
-The explorer allows you to:
-- View all transactions
-- Check token holders
-- Read contract state
-- Verify the contract code
-
-## Troubleshooting
-
-### Build Issues
-
-If you encounter build errors:
-```bash
-# Clean the build directory
-rm -rf target/
-
-# Rebuild
-scarb build
+// Create snapshots for reporting
+let snapshot_engine = ISnapshotEngineDispatcher { contract_address: snapshot_engine_address };
+let snapshot_id = snapshot_engine.schedule_snapshot(timestamp);
 ```
 
-### Deployment Issues
+## Technical Stack
 
-If deployment fails:
-1. Ensure your account has sufficient funds for gas fees
-2. Verify your account address and keystore path are correct
-3. Check that you're connected to the correct network
-4. Make sure Starkli is properly installed and configured
-
-### Account Funding
-
-For Sepolia Testnet, you can get test ETH from:
-- [Starknet Faucet](https://starknet-faucet.vercel.app/)
-- [Alchemy Faucet](https://www.alchemy.com/faucets/starknet-sepolia)
-
-## Security Considerations
-
-- **Private Keys**: Never share your keystore files or private keys
-- **Testing**: Always test on Sepolia Testnet before deploying to Mainnet
-- **Audits**: Consider getting a professional audit for production deployments
-- **Initial Supply**: Review the initial token supply before deployment
-
-## References
-
-- [Starknet Documentation](https://docs.starknet.io/)
-- [Cairo Book](https://book.cairo-lang.org/)
-- [OpenZeppelin Cairo Contracts](https://github.com/OpenZeppelin/cairo-contracts)
-- [Starkli Documentation](https://book.starkli.rs/)
-- [Voyager Block Explorer](https://voyager.online/)
+- **Cairo**: v2.6.3+
+- **Scarb**: v2.6.4+  
+- **OpenZeppelin Cairo**: v0.13.0
+- **Starknet**: Sepolia testnet
 
 ## License
 
-MIT License - See LICENSE file for details
+Mozilla Public License 2.0 (MPL-2.0)
 
-## Support
+---
 
-For issues and questions:
-- Open an issue on the project repository
-- Consult the Starknet community resources
-- Review the Cairo and OpenZeppelin documentation
+**Built for regulated securities on Starknet** 🛡️
+
+## License
+
+Mozilla Public License 2.0 (MPL-2.0)
+
+---
+
+**Built for regulated securities on Starknet** 🛡️
