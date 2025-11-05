@@ -16,9 +16,3 @@ fn test_basic_functionality() {
     let admin_addr = admin();
     assert(admin_addr != user1(), 'Admin should not equal user1');
 }
-
-#[test] 
-fn test_simple_math() {
-    let result = 2 + 2;
-    assert(result == 4, 'Two plus two should equal four');
-}
