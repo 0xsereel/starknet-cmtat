@@ -348,6 +348,7 @@ mod DebtCMTAT {
 
         fn unpause(ref self: ContractState) {
             self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
+            assert(!self.is_deactivated(), 'Contract is deactivated');
             self.paused.write(false);
             self.emit(Unpaused { account: get_caller_address() });
         }
@@ -359,6 +360,7 @@ mod DebtCMTAT {
 
         fn deactivate_contract(ref self: ContractState) {
             self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
+            assert(self.is_paused(), 'Contract must be paused first');
             self.deactivated.write(true);
             self.emit(Deactivated { account: get_caller_address() });
         }
