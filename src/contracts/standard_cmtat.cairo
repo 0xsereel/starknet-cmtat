@@ -1,5 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 // Standard CMTAT Implementation - Full Features
+//
+// Supply Management Behavior:
+// - Mint: Checks pause state, frozen addresses, requires MINTER_ROLE
+// - Burn: Checks pause state, active balance, requires BURNER_ROLE
+// 
+// Missing from CMTAT v3.0.0 Solidity:
+// - Rule engine integration for mint/burn operations  
+// - Contract deactivation functionality
+// - Batch operations (batchMint, batchBurn)
+// - Cross-chain mint/burn operations
 
 use starknet::ContractAddress;
 
@@ -176,6 +186,21 @@ mod StandardCMTAT {
             self.emit(Unpaused { account: get_caller_address() });
         }
 
+        /// Mint tokens to a specified address
+        /// 
+        /// # Restrictions:
+        /// - Requires MINTER_ROLE permission
+        /// - Contract must not be paused
+        /// - Target address must not be frozen
+        /// 
+        /// # Arguments:
+        /// - `to`: Target address to receive tokens
+        /// - `amount`: Amount of tokens to mint
+        /// 
+        /// # Panics:
+        /// - If caller doesn't have MINTER_ROLE
+        /// - If contract is paused
+        /// - If target address is frozen
         fn mint(ref self: ContractState, to: ContractAddress, amount: u256) {
             self.access_control.assert_only_role(MINTER_ROLE);
             assert(!self.is_paused(), 'Contract is paused');
@@ -183,6 +208,25 @@ mod StandardCMTAT {
             self.erc20._mint(to, amount);
         }
 
+        /// Burn tokens from a specified address
+        /// 
+        /// # Restrictions:
+        /// - Requires BURNER_ROLE permission  
+        /// - Contract must not be paused
+        /// - Must have sufficient active balance (unfrozen tokens)
+        /// 
+        /// # Arguments:
+        /// - `from`: Address to burn tokens from
+        /// - `amount`: Amount of tokens to burn
+        /// 
+        /// # Panics:
+        /// - If caller doesn't have BURNER_ROLE
+        /// - If contract is paused
+        /// - If insufficient active balance (considering frozen tokens)
+        /// 
+        /// # Note:
+        /// Unlike mint, this function does not check if the source address
+        /// is frozen, but it does verify active balance which excludes frozen tokens.
         fn burn(ref self: ContractState, from: ContractAddress, amount: u256) {
             self.access_control.assert_only_role(BURNER_ROLE);
             assert(!self.is_paused(), 'Contract is paused');

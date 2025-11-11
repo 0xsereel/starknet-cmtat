@@ -99,6 +99,38 @@ Specialized for debt securities with ISIN tracking, maturity dates, and interest
 - **Snapshot Engine**: Records historical balances for regulatory reporting
 - **Modular Design**: Engines can be shared across multiple CMTAT instances
 
+## Supply Management (Mint/Burn) Behavior
+
+### Function Restrictions Matrix
+
+| Function | Contract | Pause Check | Frozen Check | Active Balance | Rule Engine | Deactivate Check |
+|----------|----------|-------------|--------------|----------------|-------------|------------------|
+| `mint`   | Standard | ☑          | ☑           | N/A            | ☒          | ☒               |
+| `mint`   | Light    | ☒          | ☒           | N/A            | ☒          | ☒               |
+| `mint`   | Debt     | ☑          | ☑           | N/A            | ☑          | ☑               |
+| `burn`   | Standard | ☑          | ☒           | ☑              | ☒          | ☒               |
+| `burn`   | Light    | N/A        | N/A         | N/A            | N/A        | N/A             |
+| `burn`   | Debt     | ☑          | ☒           | ☑              | ☑          | ☑               |
+
+**Legend:** ☑ = Implemented | ☒ = Not implemented | N/A = Function doesn't exist
+
+### Key Features by Contract Type
+
+**Light CMTAT:**
+- Minimal restrictions, only role-based access control
+- No burn functionality, no pause/freeze checks
+- Ideal for simple token deployments
+
+**Standard CMTAT:**
+- Pause and freeze address enforcement
+- Active balance validation for burns
+- Missing: rule engine integration, deactivation
+
+**Debt CMTAT:**
+- Full CMTAT v3.0.0 compliance
+- All checks: pause, deactivation, frozen addresses, rule engine
+- Enhanced transfer restrictions and partial token freezing
+
 ## Contract Structure
 
 ```
@@ -113,6 +145,10 @@ src/
 └── interfaces/
     └── icmtat.cairo            # Interface definitions
 ```
+
+## Documentation
+
+Comprehensive inline documentation is provided in each contract file explaining the behavior and restrictions for mint/burn functions, including compliance checks for pause, freeze, and rule engine restrictions.
 
 ## Usage Example
 

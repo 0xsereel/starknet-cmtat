@@ -1,5 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 // Light CMTAT Implementation - Minimal Features
+//
+// Supply Management Behavior:
+// - Mint: Only requires MINTER_ROLE (minimal restrictions)
+// - Burn: Not implemented
+//
+// This is the most basic CMTAT implementation with:
+// - No pause functionality
+// - No frozen address checks
+// - No rule engine integration  
+// - No contract deactivation
+// - No burn functionality
 
 use starknet::ContractAddress;
 
@@ -89,6 +100,25 @@ mod LightCMTAT {
             self.emit(TermsSet { previous_terms, new_terms });
         }
 
+        /// Mint tokens to a specified address
+        /// 
+        /// # Restrictions:
+        /// - Requires MINTER_ROLE permission
+        /// 
+        /// # Arguments:
+        /// - `to`: Target address to receive tokens
+        /// - `amount`: Amount of tokens to mint
+        /// 
+        /// # Panics:
+        /// - If caller doesn't have MINTER_ROLE
+        /// 
+        /// # Note:
+        /// Light CMTAT has minimal restrictions. This implementation
+        /// does not check for:
+        /// - Pause state
+        /// - Frozen addresses
+        /// - Rule engine restrictions
+        /// - Contract deactivation
         fn mint(ref self: ContractState, to: ContractAddress, amount: u256) {
             self.access_control.assert_only_role(MINTER_ROLE);
             self.erc20._mint(to, amount);
