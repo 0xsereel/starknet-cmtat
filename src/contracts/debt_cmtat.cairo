@@ -6,12 +6,12 @@
 // - Burn: Full CMTAT v3.0.0 compliance (pause, deactivation, active balance, rule engine)
 //
 // Features aligned with CMTAT v3.0.0 Solidity:
-// ✅ Pause state checks in mint/burn
-// ✅ Contract deactivation functionality
-// ✅ Active balance validation in burn
-// ✅ Rule engine integration
-// ✅ Partial token freezing support
-// ✅ Enhanced transfer restrictions
+//  Pause state checks in mint/burn
+//  Contract deactivation functionality
+//  Active balance validation in burn
+//  Rule engine integration
+//  Partial token freezing support
+//  Enhanced transfer restrictions
 
 use starknet::ContractAddress;
 use cairo_cmtat::engines::rule_engine::{IRuleEngineDispatcher, IRuleEngineDispatcherTrait};

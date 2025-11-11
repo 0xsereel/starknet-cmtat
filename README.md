@@ -89,7 +89,7 @@ All contracts are deployed and ready for interaction:
 Full-featured implementation with complete ERC20 functionality, compliance features, and engine integration.
 
 ### Light CMTAT  
-Lightweight version with essential ERC20 and basic compliance features for minimal deployments. Useful for stablecoins.
+Core CMTAT framework implementation with all essential compliance features. Excludes optional features like rule engines, MetaTx, and forced transfers for simpler deployments.
 
 ### Debt CMTAT
 Specialized for debt securities with ISIN tracking, maturity dates, and interest rate management.
@@ -106,10 +106,10 @@ Specialized for debt securities with ISIN tracking, maturity dates, and interest
 | Function | Contract | Pause Check | Frozen Check | Active Balance | Rule Engine | Deactivate Check |
 |----------|----------|-------------|--------------|----------------|-------------|------------------|
 | `mint`   | Standard | ☑          | ☑           | N/A            | ☒          | ☒               |
-| `mint`   | Light    | ☒          | ☒           | N/A            | ☒          | ☒               |
+| `mint`   | Light    | ☑          | ☑           | N/A            | ☒          | ☑               |
 | `mint`   | Debt     | ☑          | ☑           | N/A            | ☑          | ☑               |
 | `burn`   | Standard | ☑          | ☒           | ☑              | ☒          | ☒               |
-| `burn`   | Light    | N/A        | N/A         | N/A            | N/A        | N/A             |
+| `burn`   | Light    | ☑          | ☒           | ☑              | ☒          | ☑               |
 | `burn`   | Debt     | ☑          | ☒           | ☑              | ☑          | ☑               |
 
 **Legend:** ☑ = Implemented | ☒ = Not implemented | N/A = Function doesn't exist
@@ -117,9 +117,10 @@ Specialized for debt securities with ISIN tracking, maturity dates, and interest
 ### Key Features by Contract Type
 
 **Light CMTAT:**
-- Minimal restrictions, only role-based access control
-- No burn functionality, no pause/freeze checks
-- Ideal for simple token deployments
+- Core CMTAT framework compliance (pause, freeze, deactivate, burn)
+- All essential compliance features included
+- Excludes optional features: rule engine, MetaTx, forced transfers
+- Ideal for standard CMTAT deployments without advanced features
 
 **Standard CMTAT:**
 - Pause and freeze address enforcement

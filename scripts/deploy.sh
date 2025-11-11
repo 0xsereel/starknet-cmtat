@@ -14,7 +14,7 @@ echo ""
 # Build contracts
 echo "=== Building contracts ==="
 scarb build
-echo "✅ Build complete"
+echo " Build complete"
 echo ""
 
 # Deploy Rule Engine
@@ -29,10 +29,10 @@ RULE_ENGINE=$(starkli deploy \
   0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 | grep "Contract deployed:" | cut -d' ' -f3)
 
 if [ -z "$RULE_ENGINE" ]; then
-    echo "❌ Failed to deploy Rule Engine"
+    echo " Failed to deploy Rule Engine"
     exit 1
 fi
-echo "✅ Rule Engine: $RULE_ENGINE"
+echo " Rule Engine: $RULE_ENGINE"
 
 # Deploy Snapshot Engine
 echo ""
@@ -47,10 +47,10 @@ SNAPSHOT_ENGINE=$(starkli deploy \
   0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 | grep "Contract deployed:" | cut -d' ' -f3)
 
 if [ -z "$SNAPSHOT_ENGINE" ]; then
-    echo "❌ Failed to deploy Snapshot Engine"
+    echo " Failed to deploy Snapshot Engine"
     exit 1
 fi
-echo "✅ Snapshot Engine: $SNAPSHOT_ENGINE"
+echo " Snapshot Engine: $SNAPSHOT_ENGINE"
 
 # Deploy Standard CMTAT
 echo ""
@@ -73,10 +73,10 @@ STANDARD_CMTAT=$(starkli deploy \
   "$SNAPSHOT_ENGINE" | grep "Contract deployed:" | cut -d' ' -f3)
 
 if [ -z "$STANDARD_CMTAT" ]; then
-    echo "❌ Failed to deploy Standard CMTAT"
+    echo " Failed to deploy Standard CMTAT"
     STANDARD_CMTAT="DEPLOY_MANUALLY"
 else
-    echo "✅ Standard CMTAT: $STANDARD_CMTAT"
+    echo " Standard CMTAT: $STANDARD_CMTAT"
 fi
 
 # Deploy Light CMTAT
@@ -100,10 +100,10 @@ LIGHT_CMTAT=$(starkli deploy \
   "$SNAPSHOT_ENGINE" | grep "Contract deployed:" | cut -d' ' -f3)
 
 if [ -z "$LIGHT_CMTAT" ]; then
-    echo "❌ Failed to deploy Light CMTAT"
+    echo " Failed to deploy Light CMTAT"
     LIGHT_CMTAT="DEPLOY_MANUALLY"
 else
-    echo "✅ Light CMTAT: $LIGHT_CMTAT"
+    echo " Light CMTAT: $LIGHT_CMTAT"
 fi
 
 # Deploy Debt CMTAT
@@ -133,7 +133,7 @@ if [ "$DEBT_CMTAT" = "DEPLOY_MANUALLY" ]; then
     echo "⚠️  Debt CMTAT deployment incomplete"
     echo "    Manual deployment required or check existing deployment"
 else
-    echo "✅ Debt CMTAT: $DEBT_CMTAT"
+    echo " Debt CMTAT: $DEBT_CMTAT"
 fi
 
 # Update .env file
