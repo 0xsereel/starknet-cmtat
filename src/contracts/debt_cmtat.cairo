@@ -77,6 +77,7 @@ mod DebtCMTAT {
         Deactivated: Deactivated,
         TokensFrozen: TokensFrozen,
         TokensUnfrozen: TokensUnfrozen,
+        ForcedTransfer: ForcedTransfer,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -150,6 +151,16 @@ mod DebtCMTAT {
         #[key]
         pub account: ContractAddress,
         pub amount: u256,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct ForcedTransfer {
+        #[key]
+        pub from: ContractAddress,
+        #[key]
+        pub to: ContractAddress,
+        pub amount: u256,
+        pub enforcer: ContractAddress,
     }
 
     #[constructor]
@@ -264,6 +275,26 @@ mod DebtCMTAT {
         /// - If contract is deactivated
         /// - If insufficient active balance (considering frozen tokens)
         /// - If rule engine restricts the operation
+        fn burn(ref self: ContractState, from: ContractAddress, amount: u256) {
+            self.access_control.assert_only_role(BURNER_ROLE);
+            assert(!self.is_paused(), 'Contract is paused');
+            assert(!self.is_deactivated(), 'Contract is deactivated');
+            
+            let active_balance = self.active_balance_of(from);
+            assert(active_balance >= amount, 'Insufficient active balance');
+            
+            // Call rule engine if configured
+            let rule_engine_addr = self.rule_engine.read();
+            if rule_engine_addr != starknet::contract_address_const::<0>() {
+                let rule_engine = IRuleEngineDispatcher { contract_address: rule_engine_addr };
+                let restriction = rule_engine.detect_transfer_restriction(
+                    from, 
+                    starknet::contract_address_const::<0>(), 
+                    amount
+                );
+                assert(restriction == 0, 'Transfer restricted by rules');
+            }
+            
             self.erc20._burn(from, amount);
         }
 
@@ -546,6 +577,9 @@ mod DebtCMTAT {
             // Perform the forced transfer using internal ERC20 functions
             // This bypasses all hooks and restrictions
             self.erc20._transfer(from, to, amount);
+            
+            // Emit forced transfer event for audit trail
+            self.emit(ForcedTransfer { from, to, amount, enforcer: get_caller_address() });
             
             true
         }
