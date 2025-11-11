@@ -38,7 +38,6 @@ mod DebtCMTAT {
         #[substorage(v0)]
         src5: SRC5Component::Storage,
         terms: felt252,
-        flag: felt252,
         // Engine integration
         rule_engine: ContractAddress,
         snapshot_engine: ContractAddress,
@@ -62,7 +61,6 @@ mod DebtCMTAT {
         #[flat]
         SRC5Event: SRC5Component::Event,
         TermsSet: TermsSet,
-        FlagSet: FlagSet,
         ISINSet: ISINSet,
         MaturityDateSet: MaturityDateSet,
         InterestRateSet: InterestRateSet,
@@ -76,12 +74,6 @@ mod DebtCMTAT {
     struct TermsSet {
         pub previous_terms: felt252,
         pub new_terms: felt252,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct FlagSet {
-        pub previous_flag: felt252,
-        pub new_flag: felt252,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -131,7 +123,6 @@ mod DebtCMTAT {
         initial_supply: u256,
         recipient: ContractAddress,
         terms: felt252,
-        flag: felt252,
         isin: ByteArray,
         maturity_date: u64,
         interest_rate: u256,
@@ -148,7 +139,6 @@ mod DebtCMTAT {
         self.access_control._grant_role(DEBT_ROLE, admin);
 
         self.terms.write(terms);
-        self.flag.write(flag);
         self.rule_engine.write(rule_engine);
         self.snapshot_engine.write(snapshot_engine);
         self.isin.write(isin);
@@ -173,17 +163,6 @@ mod DebtCMTAT {
             let previous_terms = self.terms.read();
             self.terms.write(new_terms);
             self.emit(TermsSet { previous_terms, new_terms });
-        }
-
-        fn flag(self: @ContractState) -> felt252 {
-            self.flag.read()
-        }
-
-        fn set_flag(ref self: ContractState, new_flag: felt252) {
-            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
-            let previous_flag = self.flag.read();
-            self.flag.write(new_flag);
-            self.emit(FlagSet { previous_flag, new_flag });
         }
 
         fn mint(ref self: ContractState, to: ContractAddress, amount: u256) {
@@ -395,8 +374,6 @@ mod DebtCMTAT {
 trait IDebtCMTAT<TContractState> {
     fn terms(self: @TContractState) -> felt252;
     fn set_terms(ref self: TContractState, new_terms: felt252);
-    fn flag(self: @TContractState) -> felt252;
-    fn set_flag(ref self: TContractState, new_flag: felt252);
     fn mint(ref self: TContractState, to: ContractAddress, amount: u256);
     fn burn(ref self: TContractState, from: ContractAddress, amount: u256);
     fn freeze_address(ref self: TContractState, account: ContractAddress);

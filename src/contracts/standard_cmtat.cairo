@@ -36,7 +36,6 @@ mod StandardCMTAT {
         #[substorage(v0)]
         src5: SRC5Component::Storage,
         terms: felt252,
-        flag: felt252,
         information: ByteArray,
         frozen_addresses: LegacyMap<ContractAddress, bool>,
         frozen_tokens: LegacyMap<ContractAddress, u256>,
@@ -53,7 +52,6 @@ mod StandardCMTAT {
         #[flat]
         SRC5Event: SRC5Component::Event,
         TermsSet: TermsSet,
-        FlagSet: FlagSet,
         InformationSet: InformationSet,
         Paused: Paused,
         Unpaused: Unpaused,
@@ -67,12 +65,6 @@ mod StandardCMTAT {
     struct TermsSet {
         pub previous_terms: felt252,
         pub new_terms: felt252,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct FlagSet {
-        pub previous_flag: felt252,
-        pub new_flag: felt252,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -125,7 +117,6 @@ mod StandardCMTAT {
         initial_supply: u256,
         recipient: ContractAddress,
         terms: felt252,
-        flag: felt252,
         information: ByteArray
     ) {
         self.erc20.initializer(name, symbol);
@@ -138,7 +129,6 @@ mod StandardCMTAT {
         self.access_control._grant_role(SNAPSHOOTER_ROLE, admin);
 
         self.terms.write(terms);
-        self.flag.write(flag);
         self.information.write(information);
         self.paused.write(false);
 
@@ -158,17 +148,6 @@ mod StandardCMTAT {
             let previous_terms = self.terms.read();
             self.terms.write(new_terms);
             self.emit(TermsSet { previous_terms, new_terms });
-        }
-
-        fn flag(self: @ContractState) -> felt252 {
-            self.flag.read()
-        }
-
-        fn set_flag(ref self: ContractState, new_flag: felt252) {
-            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
-            let previous_flag = self.flag.read();
-            self.flag.write(new_flag);
-            self.emit(FlagSet { previous_flag, new_flag });
         }
 
         fn information(self: @ContractState) -> ByteArray {
@@ -267,8 +246,6 @@ mod StandardCMTAT {
 trait IStandardCMTAT<TContractState> {
     fn terms(self: @TContractState) -> felt252;
     fn set_terms(ref self: TContractState, new_terms: felt252);
-    fn flag(self: @TContractState) -> felt252;
-    fn set_flag(ref self: TContractState, new_flag: felt252);
     fn information(self: @TContractState) -> ByteArray;
     fn set_information(ref self: TContractState, new_information: ByteArray);
     fn is_paused(self: @TContractState) -> bool;

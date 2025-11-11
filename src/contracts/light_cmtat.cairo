@@ -33,7 +33,6 @@ mod LightCMTAT {
         #[substorage(v0)]
         src5: SRC5Component::Storage,
         terms: felt252,
-        flag: felt252,
     }
 
     #[event]
@@ -46,19 +45,12 @@ mod LightCMTAT {
         #[flat]
         SRC5Event: SRC5Component::Event,
         TermsSet: TermsSet,
-        FlagSet: FlagSet,
     }
 
     #[derive(Drop, starknet::Event)]
     struct TermsSet {
         pub previous_terms: felt252,
         pub new_terms: felt252,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct FlagSet {
-        pub previous_flag: felt252,
-        pub new_flag: felt252,
     }
 
     #[constructor]
@@ -69,8 +61,7 @@ mod LightCMTAT {
         symbol: ByteArray,
         initial_supply: u256,
         recipient: ContractAddress,
-        terms: felt252,
-        flag: felt252
+        terms: felt252
     ) {
         self.erc20.initializer(name, symbol);
         self.access_control.initializer();
@@ -79,7 +70,6 @@ mod LightCMTAT {
         self.access_control._grant_role(MINTER_ROLE, admin);
 
         self.terms.write(terms);
-        self.flag.write(flag);
 
         if initial_supply > 0 {
             self.erc20._mint(recipient, initial_supply);
@@ -99,17 +89,6 @@ mod LightCMTAT {
             self.emit(TermsSet { previous_terms, new_terms });
         }
 
-        fn flag(self: @ContractState) -> felt252 {
-            self.flag.read()
-        }
-
-        fn set_flag(ref self: ContractState, new_flag: felt252) {
-            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
-            let previous_flag = self.flag.read();
-            self.flag.write(new_flag);
-            self.emit(FlagSet { previous_flag, new_flag });
-        }
-
         fn mint(ref self: ContractState, to: ContractAddress, amount: u256) {
             self.access_control.assert_only_role(MINTER_ROLE);
             self.erc20._mint(to, amount);
@@ -125,8 +104,6 @@ mod LightCMTAT {
 trait ILightCMTAT<TContractState> {
     fn terms(self: @TContractState) -> felt252;
     fn set_terms(ref self: TContractState, new_terms: felt252);
-    fn flag(self: @TContractState) -> felt252;
-    fn set_flag(ref self: TContractState, new_flag: felt252);
     fn mint(ref self: TContractState, to: ContractAddress, amount: u256);
     fn token_type(self: @TContractState) -> ByteArray;
 }
