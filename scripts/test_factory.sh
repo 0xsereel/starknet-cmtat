@@ -160,13 +160,13 @@ call_factory "get_deployment_count"
 
 # Get deployments at indices
 echo "Getting deployment at index 0:"
-call_factory "get_deployment_at_index" "0"
+call_factory "get_deployment_at_index" "0" "0"
 
 echo "Getting deployment at index 1:"
-call_factory "get_deployment_at_index" "1"
+call_factory "get_deployment_at_index" "1" "0"
 
 echo "Getting deployment at index 2:"  
-call_factory "get_deployment_at_index" "2"
+call_factory "get_deployment_at_index" "2" "0"
 echo ""
 
 echo -e "${GREEN}🎉 Factory Testing Complete!${NC}"
