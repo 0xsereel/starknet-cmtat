@@ -52,31 +52,47 @@ declare_contract() {
     
     echo -e "${BLUE}=== Declaring ${contract_name} ===${NC}"
     
-    local output=$(sncast declare --contract-name $contract_name \
+    # Run sncast declare and capture both output and exit code
+    local output
+    output=$(sncast declare --contract-name $contract_name \
         --url "$RPC_URL" 2>&1)
+    local declare_exit=$?
     
-    if echo "$output" | grep -q "error\|Error"; then
-        echo -e "${YELLOW}Warning: $contract_name may already be declared${NC}"
-        echo "$output"
-        # Try to extract class hash from error message if it's already declared
-        local class_hash=$(echo "$output" | grep -o "0x[a-fA-F0-9]\{64\}" | head -n1)
-        if [ ! -z "$class_hash" ]; then
-            echo -e "${GREEN}✓ Using existing class hash: $class_hash${NC}"
+    echo "Declaration output:"
+    echo "$output"
+    
+    # Check exit code first - only proceed on success (0) or already declared
+    if [ $declare_exit -eq 0 ]; then
+        # Successful declaration - extract from "Class hash declared:" line
+        if echo "$output" | grep -q "Class hash declared:"; then
+            local class_hash
+            class_hash=$(echo "$output" | grep "Class hash declared:" | grep -o "0x[a-fA-F0-9]\{64\}" | head -n1)
+            if [ -z "$class_hash" ]; then
+                echo -e "${RED}✗ Failed to extract class hash from 'Class hash declared:' line${NC}"
+                return 1
+            fi
+            echo -e "${GREEN}✓ Class hash declared: $class_hash${NC}"
             eval "$var_name=$class_hash"
         else
-            echo -e "${RED}✗ Failed to declare $contract_name${NC}"
+            echo -e "${RED}✗ Unexpected success output format - 'Class hash declared:' not found${NC}"
             return 1
         fi
+    elif echo "$output" | grep -q "already declared"; then
+        # Contract already declared - extract from known "already declared" pattern
+        echo -e "${YELLOW}✓ Contract already declared${NC}"
+        local class_hash
+        class_hash=$(echo "$output" | grep "already declared" | grep -o "0x[a-fA-F0-9]\{64\}" | head -n1)
+        if [ -z "$class_hash" ]; then
+            echo -e "${RED}✗ Failed to extract class hash from 'already declared' message${NC}"
+            return 1
+        fi
+        echo -e "${GREEN}✓ Using existing class hash: $class_hash${NC}"
+        eval "$var_name=$class_hash"
     else
-        # Extract class hash from successful declaration
-        local class_hash=$(echo "$output" | grep "Class hash declared:" | grep -o "0x[a-fA-F0-9]\{64\}")
-        if [ ! -z "$class_hash" ]; then
-            echo -e "${GREEN}✓ Class hash: $class_hash${NC}"
-            eval "$var_name=$class_hash"
-        else
-            echo -e "${RED}✗ Failed to extract class hash for $contract_name${NC}"
-            return 1
-        fi
+        # Genuine failure
+        echo -e "${RED}✗ Failed to declare $contract_name (exit code: $declare_exit)${NC}"
+        echo "$output"
+        return 1
     fi
     echo ""
 }
@@ -98,23 +114,36 @@ echo "  Debt Class Hash: $DEBT_CLASS_HASH"
 echo "  Light Class Hash: $LIGHT_CLASS_HASH"
 echo ""
 
+# Run sncast deploy and capture both output and exit code
 FACTORY_OUTPUT=$(sncast deploy \
     --class-hash "$FACTORY_CLASS_HASH" \
     --constructor-calldata "$ADMIN_ADDRESS" "$STANDARD_CLASS_HASH" "$DEBT_CLASS_HASH" "$LIGHT_CLASS_HASH" \
     --url "$RPC_URL" 2>&1)
+DEPLOY_EXIT=$?
 
-if echo "$FACTORY_OUTPUT" | grep -q "error\|Error"; then
-    echo -e "${RED}✗ Failed to deploy Factory${NC}"
+echo "Deployment output:"
+echo "$FACTORY_OUTPUT"
+
+# Check exit code first - only proceed on success
+if [ $DEPLOY_EXIT -ne 0 ]; then
+    echo -e "${RED}✗ Factory deployment command failed with exit code $DEPLOY_EXIT${NC}"
     echo "$FACTORY_OUTPUT"
     exit 1
-else
-    FACTORY_ADDRESS=$(echo "$FACTORY_OUTPUT" | grep "Contract address:" | grep -o "0x[a-fA-F0-9]\{64\}")
-    if [ ! -z "$FACTORY_ADDRESS" ]; then
-        echo -e "${GREEN}✓ Factory deployed at: $FACTORY_ADDRESS${NC}"
-    else
-        echo -e "${RED}✗ Failed to extract factory address${NC}"
+fi
+
+# On success, parse contract address from explicit success pattern only
+if echo "$FACTORY_OUTPUT" | grep -q "Contract address:"; then
+    # Extract from "Contract address:" line
+    FACTORY_ADDRESS=$(echo "$FACTORY_OUTPUT" | grep "Contract address:" | grep -o "0x[a-fA-F0-9]\{64\}" | head -n1)
+    if [ -z "$FACTORY_ADDRESS" ]; then
+        echo -e "${RED}✗ Failed to extract contract address from 'Contract address:' line${NC}"
         exit 1
     fi
+    echo -e "${GREEN}✓ Factory deployed at: $FACTORY_ADDRESS${NC}"
+else
+    echo -e "${RED}✗ Unexpected deployment output format - 'Contract address:' not found${NC}"
+    echo "Expected: 'Contract address: 0x...'"
+    exit 1
 fi
 
 echo ""
