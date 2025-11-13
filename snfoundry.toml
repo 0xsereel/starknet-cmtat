@@ -1,0 +1,10 @@
+[sncast.default]
+account = "deployer_foundry"
+accounts-file = "/Users/lancedavis/.starknet_accounts/starknet_open_zeppelin_accounts.json"
+keystore = "/Users/lancedavis/.starknet_accounts/starknet_open_zeppelin_keystore.json"
+
+# Alternative using local network for testing
+[sncast.local]
+account = "deployer_foundry"
+accounts-file = "/Users/lancedavis/.starknet_accounts/starknet_open_zeppelin_accounts.json"
+url = "http://127.0.0.1:5050"
