@@ -35,6 +35,12 @@ pub trait ICMTAT<TContractState> {
     fn can_transfer_from(self: @TContractState, spender: ContractAddress, from: ContractAddress, to: ContractAddress, amount: u256) -> bool;
     
     // Supply Management (Mint/Burn)
+    // Expected behavior for CMTAT v3.0.0 compliance:
+    // - mint: Should check pause state, frozen addresses, rule engine restrictions, deactivation
+    // - burn: Should check pause state, active balance, rule engine restrictions, deactivation  
+    // - batch operations: Should follow same restrictions as individual operations
+    // 
+    // Current implementations have varying compliance levels - see inline documentation in contracts
     fn mint(ref self: TContractState, to: ContractAddress, amount: u256);
     fn burn(ref self: TContractState, from: ContractAddress, amount: u256);
     fn batch_mint(ref self: TContractState, accounts: Array<ContractAddress>, amounts: Array<u256>);
