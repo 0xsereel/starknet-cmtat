@@ -1,10 +1,10 @@
 # CMTAT Factory Contract
 
-The CMTAT Factory is a smart contract that enables the deployment of Standard, Debt, and Light CMTAT token implementations on Starknet. It provides a centralized, upgradeable mechanism for deploying compliant security token contracts.
+The CMTAT Factory is a smart contract that enables the deployment of Standard, Debt, Light, and Allowlist CMTAT token implementations on Starknet. It provides a centralized, upgradeable mechanism for deploying compliant security token contracts.
 
 ## Overview
 
-The factory contract follows the factory pattern, storing class hashes of the three CMTAT implementations and providing deployment functions that use the `deploy_syscall` to create new contract instances.
+The factory contract follows the factory pattern, storing class hashes of the four CMTAT implementations and providing deployment functions that use the `deploy_syscall` to create new contract instances.
 
 ## Features
 
@@ -12,6 +12,7 @@ The factory contract follows the factory pattern, storing class hashes of the th
 - Deploy Standard CMTAT (full-featured implementation)
 - Deploy Debt CMTAT (specialized for debt instruments)
 - Deploy Light CMTAT (core compliance features)
+- Deploy Allowlist CMTAT (transfer restrictions via allowlist)
 
 ### 2. **Class Hash Management**
 - Store and update class hashes for each implementation
@@ -39,6 +40,7 @@ CMTATFactory
     ├── standard_class_hash: ClassHash
     ├── debt_class_hash: ClassHash
     ├── light_class_hash: ClassHash
+    ├── allowlist_class_hash: ClassHash
     ├── deployment_count: u256
     ├── deployments: LegacyMap<u256, ContractAddress>
     └── is_deployed: LegacyMap<ContractAddress, bool>
@@ -57,6 +59,9 @@ Returns the stored class hash for Debt CMTAT.
 #### `get_light_class_hash() -> ClassHash`
 Returns the stored class hash for Light CMTAT.
 
+#### `get_allowlist_class_hash() -> ClassHash`
+Returns the stored class hash for Allowlist CMTAT.
+
 #### `set_standard_class_hash(class_hash: ClassHash)`
 Updates the Standard CMTAT class hash. **Owner only**.
 
@@ -65,6 +70,9 @@ Updates the Debt CMTAT class hash. **Owner only**.
 
 #### `set_light_class_hash(class_hash: ClassHash)`
 Updates the Light CMTAT class hash. **Owner only**.
+
+#### `set_allowlist_class_hash(class_hash: ClassHash)`
+Updates the Allowlist CMTAT class hash. **Owner only**.
 
 ### Deployment Functions
 
@@ -123,6 +131,22 @@ Deploys a new Light CMTAT contract instance.
 
 **Emits:** `LightCMTATDeployed`
 
+#### `deploy_allowlist_cmtat(...) -> ContractAddress`
+Deploys a new Allowlist CMTAT contract instance with transfer restrictions via allowlist.
+
+**Parameters:**
+- `forwarder_irrevocable`: Trusted forwarder address for meta-transactions
+- `admin`: Initial admin address
+- `name`: Token name
+- `symbol`: Token symbol
+- `initial_supply`: Initial token supply
+- `recipient`: Address to receive initial supply (automatically added to allowlist)
+- `salt`: Salt for address calculation
+
+**Returns:** Address of deployed contract
+
+**Emits:** `AllowlistCMTATDeployed`
+
 ### Query Functions
 
 #### `get_deployment_count() -> u256`
@@ -173,6 +197,18 @@ struct LightCMTATDeployed {
 }
 ```
 
+### `AllowlistCMTATDeployed`
+Emitted when an Allowlist CMTAT is deployed.
+```cairo
+struct AllowlistCMTATDeployed {
+    contract_address: ContractAddress,  // indexed
+    deployer: ContractAddress,          // indexed
+    name: ByteArray,
+    symbol: ByteArray,
+    admin: ContractAddress,
+}
+```
+
 ### `ClassHashUpdated`
 Emitted when a class hash is updated.
 ```cairo
@@ -193,7 +229,8 @@ let factory_address = deploy_factory(
     owner_address,
     standard_class_hash,
     debt_class_hash,
-    light_class_hash
+    light_class_hash,
+    allowlist_class_hash
 );
 ```
 
@@ -246,6 +283,20 @@ let light_token_address = factory.deploy_light_cmtat(
 );
 ```
 
+### Deploying an Allowlist CMTAT
+
+```cairo
+let allowlist_token_address = factory.deploy_allowlist_cmtat(
+    forwarder_irrevocable: forwarder_address,
+    admin: admin_address,
+    name: "Restricted Security Token",
+    symbol: "RST",
+    initial_supply: 300000_u256,
+    recipient: recipient_address,  // Automatically added to allowlist
+    salt: 0xabc
+);
+```
+
 ### Updating Class Hashes (Owner Only)
 
 ```cairo
@@ -257,6 +308,9 @@ factory.set_debt_class_hash(new_debt_class_hash);
 
 // Update Light CMTAT implementation
 factory.set_light_class_hash(new_light_class_hash);
+
+// Update Allowlist CMTAT implementation
+factory.set_allowlist_class_hash(new_allowlist_class_hash);
 ```
 
 ### Querying Deployments
@@ -286,6 +340,9 @@ sncast declare --contract-name DebtCMTAT
 
 # Declare Light CMTAT
 sncast declare --contract-name LightCMTAT
+
+# Declare Allowlist CMTAT
+sncast declare --contract-name AllowlistCMTAT
 ```
 
 ### 2. Declare and Deploy Factory
@@ -298,7 +355,7 @@ sncast declare --contract-name CMTATFactory
 # Deploy Factory
 sncast deploy \
     --class-hash <factory_class_hash> \
-    --constructor-calldata <owner_address> <standard_class_hash> <debt_class_hash> <light_class_hash>
+    --constructor-calldata <owner_address> <standard_class_hash> <debt_class_hash> <light_class_hash> <allowlist_class_hash>
 ```
 
 ### 3. Deploy Tokens Using Factory
@@ -514,6 +571,24 @@ sncast --profile factory_deployer invoke \
                   34567'
 ```
 
+#### Deploying an Allowlist CMTAT
+
+```bash
+# Deploy via factory using --arguments (recommended)
+sncast --profile factory_deployer invoke \
+    --contract-address $FACTORY_ADDRESS \
+    --function deploy_allowlist_cmtat \
+    --arguments '0x0, 
+                  $ADMIN_ADDRESS, 
+                  "Restricted Security Token", 
+                  "RST", 
+                  300000_u256, 
+                  $ADMIN_ADDRESS, 
+                  45678'
+```
+
+**Note:** The Allowlist CMTAT requires a trusted forwarder address for meta-transactions. Use `0x0` if not using meta-transactions. The recipient address is automatically added to the allowlist upon deployment.
+
 #### Querying Factory Information
 
 ```bash
@@ -546,6 +621,10 @@ sncast --profile factory_deployer call \
 sncast --profile factory_deployer call \
     --contract-address $FACTORY_ADDRESS \
     --function get_light_class_hash
+
+sncast --profile factory_deployer call \
+    --contract-address $FACTORY_ADDRESS \
+    --function get_allowlist_class_hash
 ```
 
 ### Using Cairo MCP for Semantic Search
@@ -591,7 +670,38 @@ cline "show me how to properly format constructor calldata for CMTAT deployment"
 
 ## Deployment Log
 
-### Sepolia Testnet - November 13, 2025
+### Sepolia Testnet - November 14, 2025
+
+**Declared Class Hashes:**
+
+| Contract Type | Class Hash | Explorer Link |
+|--------------|------------|---------------|
+| StandardCMTAT | `0x005bdfd54cc31e70b05a75685f83120489585250524d161876e553c8a8401cdb` | [View](https://sepolia.starkscan.co/class/0x005bdfd54cc31e70b05a75685f83120489585250524d161876e553c8a8401cdb) |
+| DebtCMTAT | `0x02910b930ef2eb20065709e455b6da9ae4c59533a7be9fdb460fdc01be376886` | [View](https://sepolia.starkscan.co/class/0x02910b930ef2eb20065709e455b6da9ae4c59533a7be9fdb460fdc01be376886) |
+| LightCMTAT | `0x031e4556ea476876e118052b593167b2e24f178b25f47dd30c379d95c8e1c3e1` | [View](https://sepolia.starkscan.co/class/0x031e4556ea476876e118052b593167b2e24f178b25f47dd30c379d95c8e1c3e1) |
+| **AllowlistCMTAT** | `0x68dafcd5dfca7745d2b142e5737e4c2dbd9de4cd3df663a57bd5f27dd166df` | [View](https://sepolia.starkscan.co/class/0x0068dafcd5dfca7745d2b142e5737e4c2dbd9de4cd3df663a57bd5f27dd166df) |
+| CMTATFactory | `0x3665412374e18dc7c3eba80c874902cd115071e1b15e7585d8316b9fa57a1fd` | [View](https://sepolia.starkscan.co/class/0x03665412374e18dc7c3eba80c874902cd115071e1b15e7585d8316b9fa57a1fd) |
+
+**Account Used:**
+- Address: `0x77a4f3a1404376cae3ea220ce3ce43ecfdbf9317b61c1b26930976179a8e302`
+- Profile: `deployer_foundry`
+
+**Factory Deployment:**
+
+| Item | Value | Explorer Link |
+|------|-------|---------------|
+| Factory Address | `0x01db51722507221913fd67d598d692a360ed2205d045754fe407180553728cb2` | [View](https://sepolia.starkscan.co/contract/0x01db51722507221913fd67d598d692a360ed2205d045754fe407180553728cb2) |
+| Deploy Transaction | `0x0083112b7f13ac93b0b529856a7dfd713d8090930b9dbaab1bf35e5626c68735` | [View](https://sepolia.starkscan.co/tx/0x0083112b7f13ac93b0b529856a7dfd713d8090930b9dbaab1bf35e5626c68735) |
+| Owner | `0x77a4f3a1404376cae3ea220ce3ce43ecfdbf9317b61c1b26930976179a8e302` | - |
+
+**Constructor Parameters:**
+- `owner`: `0x77a4f3a1404376cae3ea220ce3ce43ecfdbf9317b61c1b26930976179a8e302`
+- `standard_class_hash`: `0x005bdfd54cc31e70b05a75685f83120489585250524d161876e553c8a8401cdb`
+- `debt_class_hash`: `0x02910b930ef2eb20065709e455b6da9ae4c59533a7be9fdb460fdc01be376886`
+- `light_class_hash`: `0x031e4556ea476876e118052b593167b2e24f178b25f47dd30c379d95c8e1c3e1`
+- `allowlist_class_hash`: `0x68dafcd5dfca7745d2b142e5737e4c2dbd9de4cd3df663a57bd5f27dd166df`
+
+### Sepolia Testnet - November 13, 2025 (Previous Deployment)
 
 **Declared Class Hashes:**
 
