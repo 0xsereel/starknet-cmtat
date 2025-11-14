@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// CMTAT Factory - Deploy Standard, Debt, and Light CMTAT Implementations
+// CMTAT Factory - Deploy Standard, Debt, Light, and Allowlist CMTAT Implementations
 
 use starknet::{ContractAddress, ClassHash};
 
@@ -9,20 +9,21 @@ trait ICMTATFactory<TContractState> {
     fn get_standard_class_hash(self: @TContractState) -> ClassHash;
     fn get_debt_class_hash(self: @TContractState) -> ClassHash;
     fn get_light_class_hash(self: @TContractState) -> ClassHash;
+    fn get_allowlist_class_hash(self: @TContractState) -> ClassHash;
     fn set_standard_class_hash(ref self: TContractState, class_hash: ClassHash);
     fn set_debt_class_hash(ref self: TContractState, class_hash: ClassHash);
     fn set_light_class_hash(ref self: TContractState, class_hash: ClassHash);
+    fn set_allowlist_class_hash(ref self: TContractState, class_hash: ClassHash);
     
     // Deployment functions
     fn deploy_standard_cmtat(
         ref self: TContractState,
+        forwarder_irrevocable: ContractAddress,
         admin: ContractAddress,
         name: ByteArray,
         symbol: ByteArray,
         initial_supply: u256,
         recipient: ContractAddress,
-        terms: felt252,
-        information: ByteArray,
         salt: felt252
     ) -> ContractAddress;
     
@@ -33,13 +34,6 @@ trait ICMTATFactory<TContractState> {
         symbol: ByteArray,
         initial_supply: u256,
         recipient: ContractAddress,
-        terms: felt252,
-        isin: ByteArray,
-        maturity_date: u64,
-        interest_rate: u256,
-        par_value: u256,
-        rule_engine: ContractAddress,
-        snapshot_engine: ContractAddress,
         salt: felt252
     ) -> ContractAddress;
     
@@ -51,6 +45,17 @@ trait ICMTATFactory<TContractState> {
         initial_supply: u256,
         recipient: ContractAddress,
         terms: felt252,
+        salt: felt252
+    ) -> ContractAddress;
+    
+    fn deploy_allowlist_cmtat(
+        ref self: TContractState,
+        forwarder_irrevocable: ContractAddress,
+        admin: ContractAddress,
+        name: ByteArray,
+        symbol: ByteArray,
+        initial_supply: u256,
+        recipient: ContractAddress,
         salt: felt252
     ) -> ContractAddress;
     
@@ -88,6 +93,7 @@ mod CMTATFactory {
         standard_class_hash: ClassHash,
         debt_class_hash: ClassHash,
         light_class_hash: ClassHash,
+        allowlist_class_hash: ClassHash,
         deployment_count: u256,
         deployments: LegacyMap<u256, ContractAddress>,
         is_deployed: LegacyMap<ContractAddress, bool>,
@@ -103,6 +109,7 @@ mod CMTATFactory {
         StandardCMTATDeployed: StandardCMTATDeployed,
         DebtCMTATDeployed: DebtCMTATDeployed,
         LightCMTATDeployed: LightCMTATDeployed,
+        AllowlistCMTATDeployed: AllowlistCMTATDeployed,
         ClassHashUpdated: ClassHashUpdated,
     }
 
@@ -126,11 +133,21 @@ mod CMTATFactory {
         pub name: ByteArray,
         pub symbol: ByteArray,
         pub admin: ContractAddress,
-        pub isin: ByteArray,
     }
 
     #[derive(Drop, starknet::Event)]
     struct LightCMTATDeployed {
+        #[key]
+        pub contract_address: ContractAddress,
+        #[key]
+        pub deployer: ContractAddress,
+        pub name: ByteArray,
+        pub symbol: ByteArray,
+        pub admin: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct AllowlistCMTATDeployed {
         #[key]
         pub contract_address: ContractAddress,
         #[key]
@@ -153,12 +170,14 @@ mod CMTATFactory {
         owner: ContractAddress,
         standard_class_hash: ClassHash,
         debt_class_hash: ClassHash,
-        light_class_hash: ClassHash
+        light_class_hash: ClassHash,
+        allowlist_class_hash: ClassHash
     ) {
         self.ownable.initializer(owner);
         self.standard_class_hash.write(standard_class_hash);
         self.debt_class_hash.write(debt_class_hash);
         self.light_class_hash.write(light_class_hash);
+        self.allowlist_class_hash.write(allowlist_class_hash);
         self.deployment_count.write(0);
     }
 
@@ -174,6 +193,10 @@ mod CMTATFactory {
 
         fn get_light_class_hash(self: @ContractState) -> ClassHash {
             self.light_class_hash.read()
+        }
+
+        fn get_allowlist_class_hash(self: @ContractState) -> ClassHash {
+            self.allowlist_class_hash.read()
         }
 
         fn set_standard_class_hash(ref self: ContractState, class_hash: ClassHash) {
@@ -209,29 +232,39 @@ mod CMTATFactory {
             });
         }
 
+        fn set_allowlist_class_hash(ref self: ContractState, class_hash: ClassHash) {
+            self.ownable.assert_only_owner();
+            let old_class_hash = self.allowlist_class_hash.read();
+            self.allowlist_class_hash.write(class_hash);
+            self.emit(ClassHashUpdated {
+                contract_type: 'ALLOWLIST_CMTAT',
+                old_class_hash,
+                new_class_hash: class_hash
+            });
+        }
+
         fn deploy_standard_cmtat(
             ref self: ContractState,
+            forwarder_irrevocable: ContractAddress,
             admin: ContractAddress,
             name: ByteArray,
             symbol: ByteArray,
             initial_supply: u256,
             recipient: ContractAddress,
-            terms: felt252,
-            information: ByteArray,
             salt: felt252
         ) -> ContractAddress {
             let class_hash = self.standard_class_hash.read();
             assert(!class_hash.is_zero(), 'Standard class hash not set');
 
-            // Prepare constructor calldata
+            // Prepare constructor calldata matching StandardCMTAT constructor
+            // constructor(forwarder_irrevocable, admin, name, symbol, initial_supply, recipient)
             let mut calldata: Array<felt252> = array![];
+            Serde::serialize(@forwarder_irrevocable, ref calldata);
             Serde::serialize(@admin, ref calldata);
             Serde::serialize(@name, ref calldata);
             Serde::serialize(@symbol, ref calldata);
             Serde::serialize(@initial_supply, ref calldata);
             Serde::serialize(@recipient, ref calldata);
-            Serde::serialize(@terms, ref calldata);
-            Serde::serialize(@information, ref calldata);
 
             // Deploy the contract
             let (contract_address, _) = deploy_syscall(
@@ -260,32 +293,19 @@ mod CMTATFactory {
             symbol: ByteArray,
             initial_supply: u256,
             recipient: ContractAddress,
-            terms: felt252,
-            isin: ByteArray,
-            maturity_date: u64,
-            interest_rate: u256,
-            par_value: u256,
-            rule_engine: ContractAddress,
-            snapshot_engine: ContractAddress,
             salt: felt252
         ) -> ContractAddress {
             let class_hash = self.debt_class_hash.read();
             assert(!class_hash.is_zero(), 'Debt class hash not set');
 
-            // Prepare constructor calldata
+            // Prepare constructor calldata matching DebtCMTAT constructor
+            // constructor(admin, name, symbol, initial_supply, recipient)
             let mut calldata: Array<felt252> = array![];
             Serde::serialize(@admin, ref calldata);
             Serde::serialize(@name, ref calldata);
             Serde::serialize(@symbol, ref calldata);
             Serde::serialize(@initial_supply, ref calldata);
             Serde::serialize(@recipient, ref calldata);
-            Serde::serialize(@terms, ref calldata);
-            Serde::serialize(@isin, ref calldata);
-            Serde::serialize(@maturity_date, ref calldata);
-            Serde::serialize(@interest_rate, ref calldata);
-            Serde::serialize(@par_value, ref calldata);
-            Serde::serialize(@rule_engine, ref calldata);
-            Serde::serialize(@snapshot_engine, ref calldata);
 
             // Deploy the contract
             let (contract_address, _) = deploy_syscall(
@@ -301,8 +321,7 @@ mod CMTATFactory {
                 deployer: get_caller_address(),
                 name,
                 symbol,
-                admin,
-                isin
+                admin
             });
 
             contract_address
@@ -321,7 +340,8 @@ mod CMTATFactory {
             let class_hash = self.light_class_hash.read();
             assert(!class_hash.is_zero(), 'Light class hash not set');
 
-            // Prepare constructor calldata
+            // Prepare constructor calldata matching LightCMTAT constructor
+            // constructor(admin, name, symbol, initial_supply, recipient, terms)
             let mut calldata: Array<felt252> = array![];
             Serde::serialize(@admin, ref calldata);
             Serde::serialize(@name, ref calldata);
@@ -340,6 +360,49 @@ mod CMTATFactory {
 
             // Emit event
             self.emit(LightCMTATDeployed {
+                contract_address,
+                deployer: get_caller_address(),
+                name,
+                symbol,
+                admin
+            });
+
+            contract_address
+        }
+
+        fn deploy_allowlist_cmtat(
+            ref self: ContractState,
+            forwarder_irrevocable: ContractAddress,
+            admin: ContractAddress,
+            name: ByteArray,
+            symbol: ByteArray,
+            initial_supply: u256,
+            recipient: ContractAddress,
+            salt: felt252
+        ) -> ContractAddress {
+            let class_hash = self.allowlist_class_hash.read();
+            assert(!class_hash.is_zero(), 'Allowlist class hash not set');
+
+            // Prepare constructor calldata matching AllowlistCMTAT constructor
+            // constructor(forwarder_irrevocable, admin, name, symbol, initial_supply, recipient)
+            let mut calldata: Array<felt252> = array![];
+            Serde::serialize(@forwarder_irrevocable, ref calldata);
+            Serde::serialize(@admin, ref calldata);
+            Serde::serialize(@name, ref calldata);
+            Serde::serialize(@symbol, ref calldata);
+            Serde::serialize(@initial_supply, ref calldata);
+            Serde::serialize(@recipient, ref calldata);
+
+            // Deploy the contract
+            let (contract_address, _) = deploy_syscall(
+                class_hash, salt, calldata.span(), false
+            ).unwrap_syscall();
+
+            // Track deployment
+            self._record_deployment(contract_address);
+
+            // Emit event
+            self.emit(AllowlistCMTATDeployed {
                 contract_address,
                 deployer: get_caller_address(),
                 name,
