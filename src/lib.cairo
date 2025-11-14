@@ -10,8 +10,11 @@ pub mod contracts {
     pub mod standard_cmtat;
     pub mod light_cmtat;
     pub mod debt_cmtat;
+<<<<<<< HEAD
     pub mod cmtat_factory;
+=======
     pub mod allowlist_cmtat;
+>>>>>>> upstream/main
 }
 
 // CMTAT engines - Rule and Snapshot engines
