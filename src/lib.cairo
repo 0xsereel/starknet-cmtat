@@ -11,6 +11,7 @@ pub mod contracts {
     pub mod light_cmtat;
     pub mod debt_cmtat;
     pub mod cmtat_factory;
+    pub mod allowlist_cmtat;
 }
 
 // CMTAT engines - Rule and Snapshot engines

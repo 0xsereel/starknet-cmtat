@@ -2,8 +2,6 @@
 // Debt CMTAT Implementation - For Debt Instruments
 
 use starknet::ContractAddress;
-use cairo_cmtat::engines::rule_engine::{IRuleEngineDispatcher, IRuleEngineDispatcherTrait};
-use cairo_cmtat::engines::snapshot_engine::{ISnapshotEngineDispatcher, ISnapshotEngineDispatcherTrait, ISnapshotRecordingDispatcher, ISnapshotRecordingDispatcherTrait};
 
 #[starknet::contract]
 mod DebtCMTAT {
@@ -11,7 +9,6 @@ mod DebtCMTAT {
     use openzeppelin::access::accesscontrol::{AccessControlComponent, DEFAULT_ADMIN_ROLE};
     use openzeppelin::introspection::src5::SRC5Component;
     use starknet::{ContractAddress, get_caller_address};
-    use super::{IRuleEngineDispatcher, IRuleEngineDispatcherTrait, ISnapshotEngineDispatcher, ISnapshotEngineDispatcherTrait, ISnapshotRecordingDispatcher, ISnapshotRecordingDispatcherTrait};
 
     component!(path: ERC20Component, storage: erc20, event: ERC20Event);
     component!(path: AccessControlComponent, storage: access_control, event: AccessControlEvent);
@@ -27,6 +24,12 @@ mod DebtCMTAT {
 
     const MINTER_ROLE: felt252 = 'MINTER';
     const BURNER_ROLE: felt252 = 'BURNER';
+    const PAUSER_ROLE: felt252 = 'PAUSER';
+    const ENFORCER_ROLE: felt252 = 'ENFORCER';
+    const ERC20ENFORCER_ROLE: felt252 = 'ERC20ENFORCER';
+    const SNAPSHOOTER_ROLE: felt252 = 'SNAPSHOOTER';
+    const DOCUMENT_ROLE: felt252 = 'DOCUMENT';
+    const EXTRA_INFORMATION_ROLE: felt252 = 'EXTRA_INFORMATION';
     const DEBT_ROLE: felt252 = 'DEBT_ROLE';
 
     #[storage]
@@ -37,21 +40,21 @@ mod DebtCMTAT {
         access_control: AccessControlComponent::Storage,
         #[substorage(v0)]
         src5: SRC5Component::Storage,
-        terms: felt252,
+        terms: ByteArray,
+        information: ByteArray,
+        token_id: ByteArray,
         // Engine integration
-        rule_engine: ContractAddress,
         snapshot_engine: ContractAddress,
+        document_engine: ContractAddress,
+        debt_engine: ContractAddress,
         // Debt-specific fields
-        isin: ByteArray,
-        maturity_date: u64,
-        interest_rate: u256,
-        par_value: u256,
-        credit_event_occurred: bool,
-        credit_event_type: ByteArray,
-        frozen_addresses: LegacyMap<ContractAddress, bool>,
+        debt_info: ByteArray,
+        credit_events_info: ByteArray,
+        is_defaulted: bool,
         // Compliance fields
         paused: bool,
         deactivated: bool,
+        frozen_addresses: LegacyMap<ContractAddress, bool>,
         frozen_tokens: LegacyMap<ContractAddress, u256>,
     }
 
@@ -65,11 +68,14 @@ mod DebtCMTAT {
         #[flat]
         SRC5Event: SRC5Component::Event,
         TermsSet: TermsSet,
-        ISINSet: ISINSet,
-        MaturityDateSet: MaturityDateSet,
-        InterestRateSet: InterestRateSet,
-        ParValueSet: ParValueSet,
-        CreditEventSet: CreditEventSet,
+        InformationSet: InformationSet,
+        TokenIdSet: TokenIdSet,
+        DebtSet: DebtSet,
+        CreditEventsSet: CreditEventsSet,
+        DebtEngineSet: DebtEngineSet,
+        SnapshotEngineSet: SnapshotEngineSet,
+        DocumentEngineSet: DocumentEngineSet,
+        DefaultFlagged: DefaultFlagged,
         AddressFrozen: AddressFrozen,
         AddressUnfrozen: AddressUnfrozen,
         Paused: Paused,
@@ -77,39 +83,53 @@ mod DebtCMTAT {
         Deactivated: Deactivated,
         TokensFrozen: TokensFrozen,
         TokensUnfrozen: TokensUnfrozen,
-        ForcedTransfer: ForcedTransfer,
+        Mint: Mint,
+        Burn: Burn,
     }
 
     #[derive(Drop, starknet::Event)]
     struct TermsSet {
-        pub previous_terms: felt252,
-        pub new_terms: felt252,
+        pub new_terms: ByteArray,
     }
 
     #[derive(Drop, starknet::Event)]
-    struct ISINSet {
-        pub new_isin: ByteArray,
+    struct InformationSet {
+        pub new_information: ByteArray,
     }
 
     #[derive(Drop, starknet::Event)]
-    struct MaturityDateSet {
-        pub new_maturity_date: u64,
+    struct TokenIdSet {
+        pub new_token_id: ByteArray,
     }
 
     #[derive(Drop, starknet::Event)]
-    struct InterestRateSet {
-        pub new_interest_rate: u256,
+    struct DebtSet {
+        pub new_debt: ByteArray,
     }
 
     #[derive(Drop, starknet::Event)]
-    struct ParValueSet {
-        pub new_par_value: u256,
+    struct CreditEventsSet {
+        pub new_credit_events: ByteArray,
     }
 
     #[derive(Drop, starknet::Event)]
-    struct CreditEventSet {
-        pub event_type: ByteArray,
-        pub occurred: bool,
+    struct DebtEngineSet {
+        pub new_debt_engine: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct SnapshotEngineSet {
+        pub new_snapshot_engine: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct DocumentEngineSet {
+        pub new_document_engine: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct DefaultFlagged {
+        pub flagged_by: ContractAddress,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -154,13 +174,17 @@ mod DebtCMTAT {
     }
 
     #[derive(Drop, starknet::Event)]
-    struct ForcedTransfer {
-        #[key]
-        pub from: ContractAddress,
+    struct Mint {
         #[key]
         pub to: ContractAddress,
-        pub amount: u256,
-        pub enforcer: ContractAddress,
+        pub value: u256,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct Burn {
+        #[key]
+        pub from: ContractAddress,
+        pub value: u256,
     }
 
     #[constructor]
@@ -170,14 +194,7 @@ mod DebtCMTAT {
         name: ByteArray,
         symbol: ByteArray,
         initial_supply: u256,
-        recipient: ContractAddress,
-        terms: felt252,
-        isin: ByteArray,
-        maturity_date: u64,
-        interest_rate: u256,
-        par_value: u256,
-        rule_engine: ContractAddress,
-        snapshot_engine: ContractAddress
+        recipient: ContractAddress
     ) {
         self.erc20.initializer(name, symbol);
         self.access_control.initializer();
@@ -185,18 +202,25 @@ mod DebtCMTAT {
         self.access_control._grant_role(DEFAULT_ADMIN_ROLE, admin);
         self.access_control._grant_role(MINTER_ROLE, admin);
         self.access_control._grant_role(BURNER_ROLE, admin);
+        self.access_control._grant_role(PAUSER_ROLE, admin);
+        self.access_control._grant_role(ENFORCER_ROLE, admin);
+        self.access_control._grant_role(ERC20ENFORCER_ROLE, admin);
+        self.access_control._grant_role(SNAPSHOOTER_ROLE, admin);
+        self.access_control._grant_role(DOCUMENT_ROLE, admin);
+        self.access_control._grant_role(EXTRA_INFORMATION_ROLE, admin);
         self.access_control._grant_role(DEBT_ROLE, admin);
 
-        self.terms.write(terms);
-        self.rule_engine.write(rule_engine);
-        self.snapshot_engine.write(snapshot_engine);
-        self.isin.write(isin);
-        self.maturity_date.write(maturity_date);
-        self.interest_rate.write(interest_rate);
-        self.par_value.write(par_value);
-        self.credit_event_occurred.write(false);
+        self.terms.write("");
+        self.information.write("");
+        self.token_id.write("");
+        self.debt_info.write("");
+        self.credit_events_info.write("");
+        self.is_defaulted.write(false);
         self.paused.write(false);
         self.deactivated.write(false);
+        self.snapshot_engine.write(starknet::contract_address_const::<0>());
+        self.document_engine.write(starknet::contract_address_const::<0>());
+        self.debt_engine.write(starknet::contract_address_const::<0>());
 
         if initial_supply > 0 {
             self.erc20._mint(recipient, initial_supply);
@@ -205,164 +229,285 @@ mod DebtCMTAT {
 
     #[abi(embed_v0)]
     impl DebtCMTATImpl of super::IDebtCMTAT<ContractState> {
-        fn terms(self: @ContractState) -> felt252 {
+        // ============ Information Functions ============
+        fn terms(self: @ContractState) -> ByteArray {
             self.terms.read()
         }
 
-        fn set_terms(ref self: ContractState, new_terms: felt252) {
+        fn set_terms(ref self: ContractState, new_terms: ByteArray) -> bool {
             self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
-            let previous_terms = self.terms.read();
-            self.terms.write(new_terms);
-            self.emit(TermsSet { previous_terms, new_terms });
+            self.terms.write(new_terms.clone());
+            self.emit(TermsSet { new_terms });
+            true
         }
 
-        /// Mint tokens to a specified address
-        /// 
-        /// # Restrictions:
-        /// - Requires MINTER_ROLE permission
-        /// - Contract must not be paused
-        /// - Contract must not be deactivated
-        /// - Target address must not be frozen
-        /// - Calls rule engine for validation if configured
-        /// 
-        /// # Arguments:
-        /// - `to`: Target address to receive tokens
-        /// - `amount`: Amount of tokens to mint
-        /// 
-        /// # Panics:
-        /// - If caller doesn't have MINTER_ROLE
-        /// - If contract is paused
-        /// - If contract is deactivated
-        /// - If target address is frozen
-        /// - If rule engine restricts the operation
-        fn mint(ref self: ContractState, to: ContractAddress, amount: u256) {
+        fn information(self: @ContractState) -> ByteArray {
+            self.information.read()
+        }
+
+        fn set_information(ref self: ContractState, new_information: ByteArray) -> bool {
+            self.access_control.assert_only_role(EXTRA_INFORMATION_ROLE);
+            self.information.write(new_information.clone());
+            self.emit(InformationSet { new_information });
+            true
+        }
+
+        fn token_id(self: @ContractState) -> ByteArray {
+            self.token_id.read()
+        }
+
+        fn set_token_id(ref self: ContractState, new_token_id: ByteArray) -> bool {
+            self.access_control.assert_only_role(EXTRA_INFORMATION_ROLE);
+            self.token_id.write(new_token_id.clone());
+            self.emit(TokenIdSet { new_token_id });
+            true
+        }
+
+        // ============ Batch Balance Query ============
+        fn batch_balance_of(self: @ContractState, accounts: Span<ContractAddress>) -> Array<u256> {
+            let mut balances = ArrayTrait::new();
+            let mut i: u32 = 0;
+            loop {
+                if i >= accounts.len() {
+                    break;
+                }
+                let account = *accounts.at(i);
+                balances.append(self.erc20.balance_of(account));
+                i += 1;
+            };
+            balances
+        }
+
+        // ============ Role Getters ============
+        fn get_default_admin_role(self: @ContractState) -> felt252 {
+            DEFAULT_ADMIN_ROLE
+        }
+
+        fn get_minter_role(self: @ContractState) -> felt252 {
+            MINTER_ROLE
+        }
+
+        fn get_burner_role(self: @ContractState) -> felt252 {
+            BURNER_ROLE
+        }
+
+        fn get_pauser_role(self: @ContractState) -> felt252 {
+            PAUSER_ROLE
+        }
+
+        fn get_enforcer_role(self: @ContractState) -> felt252 {
+            ENFORCER_ROLE
+        }
+
+        fn get_erc20enforcer_role(self: @ContractState) -> felt252 {
+            ERC20ENFORCER_ROLE
+        }
+
+        fn get_snapshooter_role(self: @ContractState) -> felt252 {
+            SNAPSHOOTER_ROLE
+        }
+
+        fn get_document_role(self: @ContractState) -> felt252 {
+            DOCUMENT_ROLE
+        }
+
+        fn get_extra_information_role(self: @ContractState) -> felt252 {
+            EXTRA_INFORMATION_ROLE
+        }
+
+        fn get_debt_role(self: @ContractState) -> felt252 {
+            DEBT_ROLE
+        }
+
+        // ============ Version ============
+        fn version(self: @ContractState) -> ByteArray {
+            "2.0.0"
+        }
+
+        // ============ Minting Functions ============
+        fn mint(ref self: ContractState, to: ContractAddress, value: u256) -> bool {
             self.access_control.assert_only_role(MINTER_ROLE);
-            assert(!self.is_paused(), 'Contract is paused');
-            assert(!self.is_deactivated(), 'Contract is deactivated');
-            assert(!self.is_frozen(to), 'Address is frozen');
-            
-            // Call rule engine if configured
-            let rule_engine_addr = self.rule_engine.read();
-            if rule_engine_addr != starknet::contract_address_const::<0>() {
-                let rule_engine = IRuleEngineDispatcher { contract_address: rule_engine_addr };
-                let restriction = rule_engine.detect_transfer_restriction(
-                    starknet::contract_address_const::<0>(), 
-                    to, 
-                    amount
-                );
-                assert(restriction == 0, 'Transfer restricted by rules');
-            }
-            
-            self.erc20._mint(to, amount);
+            assert(!self.paused(), 'Contract is paused');
+            self.erc20._mint(to, value);
+            self.emit(Mint { to, value });
+            true
         }
 
-        /// Burn tokens from a specified address
-        /// 
-        /// # Restrictions:
-        /// - Requires BURNER_ROLE permission
-        /// - Contract must not be paused
-        /// - Contract must not be deactivated
-        /// - Must have sufficient active balance (unfrozen tokens)
-        /// - Calls rule engine for validation if configured
-        /// 
-        /// # Arguments:
-        /// - `from`: Address to burn tokens from
-        /// - `amount`: Amount of tokens to burn
-        /// 
-        /// # Panics:
-        /// - If caller doesn't have BURNER_ROLE
-        /// - If contract is paused
-        /// - If contract is deactivated
-        /// - If insufficient active balance (considering frozen tokens)
-        /// - If rule engine restricts the operation
-        fn burn(ref self: ContractState, from: ContractAddress, amount: u256) {
+        fn batch_mint(ref self: ContractState, tos: Span<ContractAddress>, values: Span<u256>) -> bool {
+            self.access_control.assert_only_role(MINTER_ROLE);
+            assert(!self.paused(), 'Contract is paused');
+            assert(tos.len() == values.len(), 'Arrays length mismatch');
+            
+            let mut i: u32 = 0;
+            loop {
+                if i >= tos.len() {
+                    break;
+                }
+                let to = *tos.at(i);
+                let value = *values.at(i);
+                self.erc20._mint(to, value);
+                self.emit(Mint { to, value });
+                i += 1;
+            };
+            true
+        }
+
+        fn burn_and_mint(ref self: ContractState, from: ContractAddress, to: ContractAddress, value: u256) -> bool {
+            self.access_control.assert_only_role(MINTER_ROLE);
+            assert(!self.paused(), 'Contract is paused');
+            
+            // Validate addresses are not frozen
+            assert(!self.is_frozen(from), 'From address is frozen');
+            assert(!self.is_frozen(to), 'To address is frozen');
+            
+            // Verify sufficient active balance before burning
+            let active_balance = self.get_active_balance_of(from);
+            assert(active_balance >= value, 'Insufficient active balance');
+            
+            self.erc20._burn(from, value);
+            self.emit(Burn { from, value });
+            self.erc20._mint(to, value);
+            self.emit(Mint { to, value });
+            true
+        }
+
+        // ============ Burning Functions ============
+        fn burn(ref self: ContractState, value: u256) -> bool {
+            let from = get_caller_address();
+            assert(!self.paused(), 'Contract is paused');
+            assert(!self.is_frozen(from), 'Sender frozen');
+            self.erc20._burn(from, value);
+            self.emit(Burn { from, value });
+            true
+        }
+
+        fn burn_from(ref self: ContractState, from: ContractAddress, value: u256) -> bool {
+            assert(!self.paused(), 'Contract is paused');
+            assert(!self.is_frozen(from), 'Sender frozen');
+            let spender = get_caller_address();
+            self.erc20._spend_allowance(from, spender, value);
+            self.erc20._burn(from, value);
+            self.emit(Burn { from, value });
+            true
+        }
+
+        fn batch_burn(ref self: ContractState, accounts: Span<ContractAddress>, values: Span<u256>) -> bool {
             self.access_control.assert_only_role(BURNER_ROLE);
-            assert(!self.is_paused(), 'Contract is paused');
-            assert(!self.is_deactivated(), 'Contract is deactivated');
+            assert(!self.paused(), 'Contract is paused');
+            assert(accounts.len() == values.len(), 'Arrays length mismatch');
             
-            let active_balance = self.active_balance_of(from);
-            assert(active_balance >= amount, 'Insufficient active balance');
-            
-            // Call rule engine if configured
-            let rule_engine_addr = self.rule_engine.read();
-            if rule_engine_addr != starknet::contract_address_const::<0>() {
-                let rule_engine = IRuleEngineDispatcher { contract_address: rule_engine_addr };
-                let restriction = rule_engine.detect_transfer_restriction(
-                    from, 
-                    starknet::contract_address_const::<0>(), 
-                    amount
-                );
-                assert(restriction == 0, 'Transfer restricted by rules');
+            let mut i: u32 = 0;
+            loop {
+                if i >= accounts.len() {
+                    break;
+                }
+                let from = *accounts.at(i);
+                let value = *values.at(i);
+                assert(!self.is_frozen(from), 'Sender frozen');
+                self.erc20._burn(from, value);
+                self.emit(Burn { from, value });
+                i += 1;
+            };
+            true
+        }
+
+        // ============ Pause Functions ============
+        fn paused(self: @ContractState) -> bool {
+            self.paused.read()
+        }
+
+        fn pause(ref self: ContractState) -> bool {
+            self.access_control.assert_only_role(PAUSER_ROLE);
+            self.paused.write(true);
+            self.emit(Paused { account: get_caller_address() });
+            true
+        }
+
+        fn unpause(ref self: ContractState) -> bool {
+            self.access_control.assert_only_role(PAUSER_ROLE);
+            assert(!self.deactivated(), 'Cannot unpause when deactivated');
+            self.paused.write(false);
+            self.emit(Unpaused { account: get_caller_address() });
+            true
+        }
+
+        fn deactivated(self: @ContractState) -> bool {
+            self.deactivated.read()
+        }
+
+        fn deactivate_contract(ref self: ContractState) -> bool {
+            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
+            assert(self.paused.read(), 'Must pause before deactivate');
+            self.deactivated.write(true);
+            self.emit(Deactivated { account: get_caller_address() });
+            true
+        }
+
+        // ============ Freezing Functions ============
+        fn set_address_frozen(ref self: ContractState, account: ContractAddress, is_frozen: bool) -> bool {
+            self.access_control.assert_only_role(ENFORCER_ROLE);
+            self.frozen_addresses.write(account, is_frozen);
+            if is_frozen {
+                self.emit(AddressFrozen { account });
+            } else {
+                self.emit(AddressUnfrozen { account });
             }
+            true
+        }
+
+        fn batch_set_address_frozen(ref self: ContractState, accounts: Span<ContractAddress>, frozen: Span<bool>) -> bool {
+            self.access_control.assert_only_role(ENFORCER_ROLE);
+            assert(accounts.len() == frozen.len(), 'Arrays length mismatch');
             
-            self.erc20._burn(from, amount);
-        }
-
-        fn freeze_address(ref self: ContractState, account: ContractAddress) {
-            self.access_control.assert_only_role(DEBT_ROLE);
-            self.frozen_addresses.write(account, true);
-            self.emit(AddressFrozen { account });
-        }
-
-        fn unfreeze_address(ref self: ContractState, account: ContractAddress) {
-            self.access_control.assert_only_role(DEBT_ROLE);
-            self.frozen_addresses.write(account, false);
-            self.emit(AddressUnfrozen { account });
+            let mut i: u32 = 0;
+            loop {
+                if i >= accounts.len() {
+                    break;
+                }
+                let account = *accounts.at(i);
+                let is_frozen = *frozen.at(i);
+                self.frozen_addresses.write(account, is_frozen);
+                if is_frozen {
+                    self.emit(AddressFrozen { account });
+                } else {
+                    self.emit(AddressUnfrozen { account });
+                }
+                i += 1;
+            };
+            true
         }
 
         fn is_frozen(self: @ContractState, account: ContractAddress) -> bool {
             self.frozen_addresses.read(account)
         }
 
-        // Pause/Unpause functionality
-        fn is_paused(self: @ContractState) -> bool {
-            self.paused.read()
+        fn freeze_partial_tokens(ref self: ContractState, account: ContractAddress, value: u256) -> bool {
+            self.access_control.assert_only_role(ERC20ENFORCER_ROLE);
+            let current_frozen = self.frozen_tokens.read(account);
+            let balance = self.erc20.balance_of(account);
+            
+            // Ensure frozen tokens never exceed account balance
+            assert(current_frozen + value <= balance, 'Cannot freeze more than balance');
+            
+            self.frozen_tokens.write(account, current_frozen + value);
+            self.emit(TokensFrozen { account, amount: value });
+            true
         }
 
-        fn pause(ref self: ContractState) {
-            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
-            self.paused.write(true);
-            self.emit(Paused { account: get_caller_address() });
+        fn unfreeze_partial_tokens(ref self: ContractState, account: ContractAddress, value: u256) -> bool {
+            self.access_control.assert_only_role(ERC20ENFORCER_ROLE);
+            let current_frozen = self.frozen_tokens.read(account);
+            assert(current_frozen >= value, 'Insufficient frozen tokens');
+            self.frozen_tokens.write(account, current_frozen - value);
+            self.emit(TokensUnfrozen { account, amount: value });
+            true
         }
 
-        fn unpause(ref self: ContractState) {
-            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
-            self.paused.write(false);
-            self.emit(Unpaused { account: get_caller_address() });
-        }
-
-        // Deactivation functionality
-        fn is_deactivated(self: @ContractState) -> bool {
-            self.deactivated.read()
-        }
-
-        fn deactivate_contract(ref self: ContractState) {
-            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
-            self.deactivated.write(true);
-            self.emit(Deactivated { account: get_caller_address() });
-        }
-
-        // Token freezing functionality
         fn get_frozen_tokens(self: @ContractState, account: ContractAddress) -> u256 {
             self.frozen_tokens.read(account)
         }
 
-        fn freeze_tokens(ref self: ContractState, account: ContractAddress, amount: u256) {
-            self.access_control.assert_only_role(DEBT_ROLE);
-            let current_frozen = self.frozen_tokens.read(account);
-            self.frozen_tokens.write(account, current_frozen + amount);
-            self.emit(TokensFrozen { account, amount });
-        }
-
-        fn unfreeze_tokens(ref self: ContractState, account: ContractAddress, amount: u256) {
-            self.access_control.assert_only_role(DEBT_ROLE);
-            let current_frozen = self.frozen_tokens.read(account);
-            assert(current_frozen >= amount, 'Insufficient frozen tokens');
-            self.frozen_tokens.write(account, current_frozen - amount);
-            self.emit(TokensUnfrozen { account, amount });
-        }
-
-        fn active_balance_of(self: @ContractState, account: ContractAddress) -> u256 {
+        fn get_active_balance_of(self: @ContractState, account: ContractAddress) -> u256 {
             let total_balance = self.erc20.balance_of(account);
             let frozen_amount = self.frozen_tokens.read(account);
             if total_balance >= frozen_amount {
@@ -372,230 +517,77 @@ mod DebtCMTAT {
             }
         }
 
-        // Debt-specific functions
-        fn get_isin(self: @ContractState) -> ByteArray {
-            self.isin.read()
+        // ============ Debt Functions ============
+        fn debt(self: @ContractState) -> ByteArray {
+            self.debt_info.read()
         }
 
-        fn set_isin(ref self: ContractState, new_isin: ByteArray) {
+        fn set_debt(ref self: ContractState, debt_: ByteArray) -> bool {
             self.access_control.assert_only_role(DEBT_ROLE);
-            self.isin.write(new_isin.clone());
-            self.emit(ISINSet { new_isin });
-        }
-
-        fn get_maturity_date(self: @ContractState) -> u64 {
-            self.maturity_date.read()
-        }
-
-        fn set_maturity_date(ref self: ContractState, new_maturity_date: u64) {
-            self.access_control.assert_only_role(DEBT_ROLE);
-            self.maturity_date.write(new_maturity_date);
-            self.emit(MaturityDateSet { new_maturity_date });
-        }
-
-        fn get_interest_rate(self: @ContractState) -> u256 {
-            self.interest_rate.read()
-        }
-
-        fn set_interest_rate(ref self: ContractState, new_interest_rate: u256) {
-            self.access_control.assert_only_role(DEBT_ROLE);
-            self.interest_rate.write(new_interest_rate);
-            self.emit(InterestRateSet { new_interest_rate });
-        }
-
-        fn get_par_value(self: @ContractState) -> u256 {
-            self.par_value.read()
-        }
-
-        fn set_par_value(ref self: ContractState, new_par_value: u256) {
-            self.access_control.assert_only_role(DEBT_ROLE);
-            self.par_value.write(new_par_value);
-            self.emit(ParValueSet { new_par_value });
-        }
-
-        fn has_credit_event(self: @ContractState) -> bool {
-            self.credit_event_occurred.read()
-        }
-
-        fn get_credit_event_type(self: @ContractState) -> ByteArray {
-            self.credit_event_type.read()
-        }
-
-        fn set_credit_event(ref self: ContractState, event_type: ByteArray, occurred: bool) {
-            self.access_control.assert_only_role(DEBT_ROLE);
-            self.credit_event_occurred.write(occurred);
-            self.credit_event_type.write(event_type.clone());
-            self.emit(CreditEventSet { event_type, occurred });
-        }
-
-        fn token_type(self: @ContractState) -> ByteArray {
-            "Debt CMTAT"
-        }
-
-        // Engine management functions
-        fn get_rule_engine(self: @ContractState) -> ContractAddress {
-            self.rule_engine.read()
-        }
-
-        fn set_rule_engine(ref self: ContractState, new_engine: ContractAddress) {
-            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
-            self.rule_engine.write(new_engine);
-        }
-
-        fn get_snapshot_engine(self: @ContractState) -> ContractAddress {
-            self.snapshot_engine.read()
-        }
-
-        fn set_snapshot_engine(ref self: ContractState, new_engine: ContractAddress) {
-            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
-            self.snapshot_engine.write(new_engine);
-        }
-
-        // Transfer restriction checking (ERC-1404 compatible)
-        fn detect_transfer_restriction(
-            self: @ContractState,
-            from: ContractAddress,
-            to: ContractAddress,
-            amount: u256
-        ) -> u8 {
-            // Check if contract is paused
-            if self.is_paused() {
-                return 2; // Contract paused
-            }
-
-            // Check if contract is deactivated
-            if self.is_deactivated() {
-                return 3; // Contract deactivated
-            }
-
-            // Check if addresses are frozen
-            if self.is_frozen(from) || self.is_frozen(to) {
-                return 1; // Address frozen
-            }
-
-            // Check active balance for sender (only if not a mint operation)
-            if from != starknet::contract_address_const::<0>() {
-                let active_balance = self.active_balance_of(from);
-                if active_balance < amount {
-                    return 4; // Insufficient active balance
-                }
-            }
-
-            // Check rule engine if configured
-            let rule_engine_addr = self.rule_engine.read();
-            if rule_engine_addr != starknet::contract_address_const::<0>() {
-                let rule_engine = IRuleEngineDispatcher { contract_address: rule_engine_addr };
-                let restriction = rule_engine.detect_transfer_restriction(from, to, amount);
-                if restriction != 0 {
-                    return restriction;
-                }
-            }
-
-            0 // No restriction
-        }
-
-        fn message_for_restriction_code(self: @ContractState, restriction_code: u8) -> ByteArray {
-            if restriction_code == 1 {
-                return "Address is frozen";
-            }
-            if restriction_code == 2 {
-                return "Contract is paused";
-            }
-            if restriction_code == 3 {
-                return "Contract is deactivated";
-            }
-            if restriction_code == 4 {
-                return "Insufficient active balance";
-            }
-
-            let rule_engine_addr = self.rule_engine.read();
-            if rule_engine_addr != starknet::contract_address_const::<0>() {
-                let rule_engine = IRuleEngineDispatcher { contract_address: rule_engine_addr };
-                return rule_engine.message_for_restriction_code(restriction_code);
-            }
-
-            "Unknown restriction"
-        }
-
-        // Snapshot functionality
-        fn schedule_snapshot(ref self: ContractState, timestamp: u64) -> u64 {
-            self.access_control.assert_only_role(DEBT_ROLE);
-            let snapshot_engine_addr = self.snapshot_engine.read();
-            assert(snapshot_engine_addr != starknet::contract_address_const::<0>(), 'No snapshot engine');
-            
-            let snapshot_engine = ISnapshotEngineDispatcher { contract_address: snapshot_engine_addr };
-            snapshot_engine.schedule_snapshot(timestamp)
-        }
-
-        /// Force transfer tokens from one address to another
-        /// 
-        /// # Administrative Override Function:
-        /// - Requires DEFAULT_ADMIN_ROLE permission
-        /// - Can transfer from frozen addresses (bypasses freeze restrictions)
-        /// - Automatically unfreezes partial tokens if needed
-        /// - Contract must not be deactivated
-        /// - Bypasses rule engine restrictions
-        /// 
-        /// # Arguments:
-        /// - `from`: Source address to transfer tokens from
-        /// - `to`: Target address to receive tokens
-        /// - `amount`: Amount of tokens to transfer
-        /// 
-        /// # Returns:
-        /// - `bool`: Always true if successful, reverts on failure
-        fn forced_transfer(ref self: ContractState, from: ContractAddress, to: ContractAddress, amount: u256) -> bool {
-            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
-            assert(!self.is_deactivated(), 'Contract is deactivated');
-            
-            // Ensure sufficient balance exists (including frozen tokens)
-            let total_balance = self.erc20.balance_of(from);
-            assert(total_balance >= amount, 'Insufficient total balance');
-            
-            // If partial tokens are frozen, unfreeze them as needed
-            let frozen_amount = self.frozen_tokens.read(from);
-            if frozen_amount > 0 {
-                let active_balance = if total_balance >= frozen_amount {
-                    total_balance - frozen_amount
-                } else {
-                    0
-                };
-                
-                // If we need to use frozen tokens, unfreeze the required amount
-                if amount > active_balance && frozen_amount > 0 {
-                    let unfreeze_amount = amount - active_balance;
-                    let amount_to_unfreeze = if unfreeze_amount > frozen_amount {
-                        frozen_amount
-                    } else {
-                        unfreeze_amount
-                    };
-                    
-                    self.frozen_tokens.write(from, frozen_amount - amount_to_unfreeze);
-                    self.emit(TokensUnfrozen { account: from, amount: amount_to_unfreeze });
-                }
-            }
-            
-            // Perform the forced transfer using internal ERC20 functions
-            // This bypasses all hooks and restrictions
-            self.erc20._transfer(from, to, amount);
-            
-            // Emit forced transfer event for audit trail
-            self.emit(ForcedTransfer { from, to, amount, enforcer: get_caller_address() });
-            
+            self.debt_info.write(debt_.clone());
+            self.emit(DebtSet { new_debt: debt_ });
             true
         }
 
-        fn record_snapshot(ref self: ContractState, snapshot_id: u64) {
+        fn credit_events(self: @ContractState) -> ByteArray {
+            self.credit_events_info.read()
+        }
+
+        fn set_credit_events(ref self: ContractState, credit_events_: ByteArray) -> bool {
             self.access_control.assert_only_role(DEBT_ROLE);
-            let snapshot_engine_addr = self.snapshot_engine.read();
-            assert(snapshot_engine_addr != starknet::contract_address_const::<0>(), 'No snapshot engine');
-            
-            let snapshot_recording = ISnapshotRecordingDispatcher { contract_address: snapshot_engine_addr };
-            let total_supply = self.erc20.total_supply();
-            snapshot_recording.record_snapshot(snapshot_id, total_supply);
+            self.credit_events_info.write(credit_events_.clone());
+            self.emit(CreditEventsSet { new_credit_events: credit_events_ });
+            true
+        }
+
+        fn debt_engine(self: @ContractState) -> ContractAddress {
+            self.debt_engine.read()
+        }
+
+        fn set_debt_engine(ref self: ContractState, debt_engine_: ContractAddress) -> bool {
+            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
+            self.debt_engine.write(debt_engine_);
+            self.emit(DebtEngineSet { new_debt_engine: debt_engine_ });
+            true
+        }
+
+        fn flag_default(ref self: ContractState) -> bool {
+            self.access_control.assert_only_role(DEBT_ROLE);
+            self.is_defaulted.write(true);
+            self.emit(DefaultFlagged { flagged_by: get_caller_address() });
+            true
+        }
+
+        // ============ Engine Management ============
+        fn set_snapshot_engine(ref self: ContractState, snapshot_engine_: ContractAddress) -> bool {
+            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
+            self.snapshot_engine.write(snapshot_engine_);
+            self.emit(SnapshotEngineSet { new_snapshot_engine: snapshot_engine_ });
+            true
+        }
+
+        fn snapshot_engine(self: @ContractState) -> ContractAddress {
+            self.snapshot_engine.read()
+        }
+
+        fn set_document_engine(ref self: ContractState, document_engine_: ContractAddress) -> bool {
+            self.access_control.assert_only_role(DEFAULT_ADMIN_ROLE);
+            self.document_engine.write(document_engine_);
+            self.emit(DocumentEngineSet { new_document_engine: document_engine_ });
+            true
+        }
+
+        fn document_engine(self: @ContractState) -> ContractAddress {
+            self.document_engine.read()
+        }
+
+        // ============ Utility Functions ============
+        fn token_type(self: @ContractState) -> ByteArray {
+            "Debt CMTAT"
         }
     }
 
-    // Internal transfer hook implementation
+    // ERC20 Hooks for transfer restrictions
     impl ERC20HooksImpl of ERC20Component::ERC20HooksTrait<ContractState> {
         fn before_update(
             ref self: ERC20Component::ComponentState<ContractState>,
@@ -604,17 +596,17 @@ mod DebtCMTAT {
             amount: u256
         ) {
             let contract_state = ERC20Component::HasComponent::get_contract(@self);
+            let zero_address: ContractAddress = starknet::contract_address_const::<0>();
 
-            // Skip checks for mint/burn (zero addresses), but only skip for mint operations
-            // Burn operations should still be checked for pause/deactivation in non-forced scenarios
-            if from != starknet::contract_address_const::<0>() && recipient != starknet::contract_address_const::<0>() {
-                // Regular transfer - check all restrictions
-                let restriction = contract_state.detect_transfer_restriction(from, recipient, amount);
-                assert(restriction == 0, 'Transfer restricted');
-            } else if from != starknet::contract_address_const::<0>() && recipient == starknet::contract_address_const::<0>() {
-                // Burn operation - only check pause and deactivation if not in forced operation
-                // Note: This would ideally check if we're in a forced operation context
-                // For now, we rely on the burn function's own checks
+            // Only check transfers (not mint/burn)
+            if from != zero_address && recipient != zero_address {
+                assert(!contract_state.paused.read(), 'Contract is paused');
+                assert(!contract_state.is_frozen(from), 'Sender frozen');
+                assert(!contract_state.is_frozen(recipient), 'Recipient frozen');
+                
+                // Check active balance
+                let active_balance = contract_state.get_active_balance_of(from);
+                assert(active_balance >= amount, 'Insufficient active balance');
             }
         }
 
@@ -623,67 +615,79 @@ mod DebtCMTAT {
             from: ContractAddress,
             recipient: ContractAddress,
             amount: u256
-        ) {
-            let mut contract_state = ERC20Component::HasComponent::get_contract_mut(ref self);
-
-            // Skip for mint/burn operations
-            if from != starknet::contract_address_const::<0>() && recipient != starknet::contract_address_const::<0>() {
-                // Notify rule engine
-                let rule_engine_addr = contract_state.rule_engine.read();
-                if rule_engine_addr != starknet::contract_address_const::<0>() {
-                    let mut rule_engine = IRuleEngineDispatcher { contract_address: rule_engine_addr };
-                    rule_engine.on_transfer_executed(from, recipient, amount);
-                }
-            }
-        }
+        ) {}
     }
 }
 
 #[starknet::interface]
 trait IDebtCMTAT<TContractState> {
-    fn terms(self: @TContractState) -> felt252;
-    fn set_terms(ref self: TContractState, new_terms: felt252);
-    fn mint(ref self: TContractState, to: ContractAddress, amount: u256);
-    fn burn(ref self: TContractState, from: ContractAddress, amount: u256);
-    fn freeze_address(ref self: TContractState, account: ContractAddress);
-    fn unfreeze_address(ref self: TContractState, account: ContractAddress);
+    // Information
+    fn terms(self: @TContractState) -> ByteArray;
+    fn set_terms(ref self: TContractState, new_terms: ByteArray) -> bool;
+    fn information(self: @TContractState) -> ByteArray;
+    fn set_information(ref self: TContractState, new_information: ByteArray) -> bool;
+    fn token_id(self: @TContractState) -> ByteArray;
+    fn set_token_id(ref self: TContractState, new_token_id: ByteArray) -> bool;
+    
+    // Balance queries
+    fn batch_balance_of(self: @TContractState, accounts: Span<ContractAddress>) -> Array<u256>;
+    
+    // Role getters
+    fn get_default_admin_role(self: @TContractState) -> felt252;
+    fn get_minter_role(self: @TContractState) -> felt252;
+    fn get_burner_role(self: @TContractState) -> felt252;
+    fn get_pauser_role(self: @TContractState) -> felt252;
+    fn get_enforcer_role(self: @TContractState) -> felt252;
+    fn get_erc20enforcer_role(self: @TContractState) -> felt252;
+    fn get_snapshooter_role(self: @TContractState) -> felt252;
+    fn get_document_role(self: @TContractState) -> felt252;
+    fn get_extra_information_role(self: @TContractState) -> felt252;
+    fn get_debt_role(self: @TContractState) -> felt252;
+    
+    // Version
+    fn version(self: @TContractState) -> ByteArray;
+    
+    // Minting
+    fn mint(ref self: TContractState, to: ContractAddress, value: u256) -> bool;
+    fn batch_mint(ref self: TContractState, tos: Span<ContractAddress>, values: Span<u256>) -> bool;
+    fn burn_and_mint(ref self: TContractState, from: ContractAddress, to: ContractAddress, value: u256) -> bool;
+    
+    // Burning
+    fn burn(ref self: TContractState, value: u256) -> bool;
+    fn burn_from(ref self: TContractState, from: ContractAddress, value: u256) -> bool;
+    fn batch_burn(ref self: TContractState, accounts: Span<ContractAddress>, values: Span<u256>) -> bool;
+    
+    // Pause
+    fn paused(self: @TContractState) -> bool;
+    fn pause(ref self: TContractState) -> bool;
+    fn unpause(ref self: TContractState) -> bool;
+    fn deactivated(self: @TContractState) -> bool;
+    fn deactivate_contract(ref self: TContractState) -> bool;
+    
+    // Freezing
+    fn set_address_frozen(ref self: TContractState, account: ContractAddress, is_frozen: bool) -> bool;
+    fn batch_set_address_frozen(ref self: TContractState, accounts: Span<ContractAddress>, frozen: Span<bool>) -> bool;
     fn is_frozen(self: @TContractState, account: ContractAddress) -> bool;
-    // Pause functionality
-    fn is_paused(self: @TContractState) -> bool;
-    fn pause(ref self: TContractState);
-    fn unpause(ref self: TContractState);
-    // Deactivation functionality
-    fn is_deactivated(self: @TContractState) -> bool;
-    fn deactivate_contract(ref self: TContractState);
-    // Token freezing functionality
+    fn freeze_partial_tokens(ref self: TContractState, account: ContractAddress, value: u256) -> bool;
+    fn unfreeze_partial_tokens(ref self: TContractState, account: ContractAddress, value: u256) -> bool;
     fn get_frozen_tokens(self: @TContractState, account: ContractAddress) -> u256;
-    fn freeze_tokens(ref self: TContractState, account: ContractAddress, amount: u256);
-    fn unfreeze_tokens(ref self: TContractState, account: ContractAddress, amount: u256);
-    fn active_balance_of(self: @TContractState, account: ContractAddress) -> u256;
-    // Debt-specific functions
-    fn get_isin(self: @TContractState) -> ByteArray;
-    fn set_isin(ref self: TContractState, new_isin: ByteArray);
-    fn get_maturity_date(self: @TContractState) -> u64;
-    fn set_maturity_date(ref self: TContractState, new_maturity_date: u64);
-    fn get_interest_rate(self: @TContractState) -> u256;
-    fn set_interest_rate(ref self: TContractState, new_interest_rate: u256);
-    fn get_par_value(self: @TContractState) -> u256;
-    fn set_par_value(ref self: TContractState, new_par_value: u256);
-    fn has_credit_event(self: @TContractState) -> bool;
-    fn get_credit_event_type(self: @TContractState) -> ByteArray;
-    fn set_credit_event(ref self: TContractState, event_type: ByteArray, occurred: bool);
+    fn get_active_balance_of(self: @TContractState, account: ContractAddress) -> u256;
+    
+    // Debt-specific
+    fn debt(self: @TContractState) -> ByteArray;
+    fn set_debt(ref self: TContractState, debt_: ByteArray) -> bool;
+    fn credit_events(self: @TContractState) -> ByteArray;
+    fn set_credit_events(ref self: TContractState, credit_events_: ByteArray) -> bool;
+    fn debt_engine(self: @TContractState) -> ContractAddress;
+    fn set_debt_engine(ref self: TContractState, debt_engine_: ContractAddress) -> bool;
+    fn flag_default(ref self: TContractState) -> bool;
+    
+    // Engines
+    fn set_snapshot_engine(ref self: TContractState, snapshot_engine_: ContractAddress) -> bool;
+    fn snapshot_engine(self: @TContractState) -> ContractAddress;
+    fn set_document_engine(ref self: TContractState, document_engine_: ContractAddress) -> bool;
+    fn document_engine(self: @TContractState) -> ContractAddress;
+    
+    // Utility
     fn token_type(self: @TContractState) -> ByteArray;
-    // Engine management
-    fn get_rule_engine(self: @TContractState) -> ContractAddress;
-    fn set_rule_engine(ref self: TContractState, new_engine: ContractAddress);
-    fn get_snapshot_engine(self: @TContractState) -> ContractAddress;
-    fn set_snapshot_engine(ref self: TContractState, new_engine: ContractAddress);
-    // Force transfer
-    fn forced_transfer(ref self: TContractState, from: ContractAddress, to: ContractAddress, amount: u256) -> bool;
-    // Transfer restrictions (ERC-1404)
-    fn detect_transfer_restriction(self: @TContractState, from: ContractAddress, to: ContractAddress, amount: u256) -> u8;
-    fn message_for_restriction_code(self: @TContractState, restriction_code: u8) -> ByteArray;
-    // Snapshot functionality
-    fn schedule_snapshot(ref self: TContractState, timestamp: u64) -> u64;
-    fn record_snapshot(ref self: TContractState, snapshot_id: u64);
 }
