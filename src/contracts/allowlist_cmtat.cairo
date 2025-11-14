@@ -5,11 +5,10 @@ use starknet::ContractAddress;
 
 #[starknet::contract]
 mod AllowlistCMTAT {
-    use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
+    use openzeppelin::token::erc20::ERC20Component;
     use openzeppelin::access::accesscontrol::{AccessControlComponent, DEFAULT_ADMIN_ROLE};
     use openzeppelin::introspection::src5::SRC5Component;
     use starknet::{ContractAddress, get_caller_address};
-    use starknet::storage::{StorageMapReadAccess, StorageMapWriteAccess};
 
     component!(path: ERC20Component, storage: erc20, event: ERC20Event);
     component!(path: AccessControlComponent, storage: access_control, event: AccessControlEvent);
@@ -22,6 +21,37 @@ mod AllowlistCMTAT {
 
     impl ERC20InternalImpl = ERC20Component::InternalImpl<ContractState>;
     impl AccessControlInternalImpl = AccessControlComponent::InternalImpl<ContractState>;
+
+    // ERC20 Hooks implementation with allowlist validation
+    impl ERC20HooksImpl of ERC20Component::ERC20HooksTrait<ContractState> {
+        fn before_update(
+            ref self: ERC20Component::ComponentState<ContractState>,
+            from: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256
+        ) {
+            let contract_state = ERC20Component::HasComponent::get_contract(@self);
+            let zero_address: ContractAddress = 0.try_into().unwrap();
+            
+            // Skip allowlist check for minting (from == 0) and burning (recipient == 0)
+            if from != zero_address && recipient != zero_address {
+                // Regular transfer - both parties must be on allowlist
+                assert(contract_state.allowlist.read(from), 'Sender not on allowlist');
+                assert(contract_state.allowlist.read(recipient), 'Recipient not on allowlist');
+            } else if recipient != zero_address {
+                // Minting - recipient must be on allowlist
+                assert(contract_state.allowlist.read(recipient), 'Recipient not on allowlist');
+            }
+            // Burning doesn't require allowlist check
+        }
+
+        fn after_update(
+            ref self: ERC20Component::ComponentState<ContractState>,
+            from: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256
+        ) {}
+    }
 
     const MINTER_ROLE: felt252 = 'MINTER';
     const BURNER_ROLE: felt252 = 'BURNER';
@@ -204,7 +234,7 @@ mod AllowlistCMTAT {
         fn mint(ref self: ContractState, to: ContractAddress, amount: u256) {
             self.access_control.assert_only_role(MINTER_ROLE);
             assert(!self.is_paused(), 'Contract is paused');
-            assert(self.is_allowed(to), 'Address not on allowlist');
+            // Allowlist check is handled by ERC20 hooks
             self.erc20._mint(to, amount);
         }
 
@@ -226,57 +256,6 @@ mod AllowlistCMTAT {
             self.access_control.assert_only_role(BURNER_ROLE);
             assert(!self.is_paused(), 'Contract is paused');
             self.erc20._burn(from, amount);
-        }
-
-        /// Transfer tokens with allowlist validation
-        /// 
-        /// # Restrictions:
-        /// - Contract must not be paused
-        /// - Both sender and recipient must be on allowlist
-        /// 
-        /// # Arguments:
-        /// - `recipient`: Address to receive tokens
-        /// - `amount`: Amount of tokens to transfer
-        /// 
-        /// # Returns:
-        /// - `bool`: true if successful
-        fn transfer(ref self: ContractState, recipient: ContractAddress, amount: u256) -> bool {
-            assert(!self.is_paused(), 'Contract is paused');
-            let sender = get_caller_address();
-            assert(self.is_allowed(sender), 'Sender not on allowlist');
-            assert(self.is_allowed(recipient), 'Recipient not on allowlist');
-            self.erc20._transfer(sender, recipient, amount);
-            true
-        }
-
-        /// Transfer tokens from an address with allowlist validation
-        /// 
-        /// # Restrictions:
-        /// - Contract must not be paused
-        /// - Both sender and recipient must be on allowlist
-        /// - Caller must have sufficient allowance
-        /// 
-        /// # Arguments:
-        /// - `sender`: Address to transfer tokens from
-        /// - `recipient`: Address to receive tokens
-        /// - `amount`: Amount of tokens to transfer
-        /// 
-        /// # Returns:
-        /// - `bool`: true if successful
-        fn transfer_from(
-            ref self: ContractState, 
-            sender: ContractAddress, 
-            recipient: ContractAddress, 
-            amount: u256
-        ) -> bool {
-            assert(!self.is_paused(), 'Contract is paused');
-            assert(self.is_allowed(sender), 'Sender not on allowlist');
-            assert(self.is_allowed(recipient), 'Recipient not on allowlist');
-            
-            let caller = get_caller_address();
-            self.erc20._spend_allowance(sender, caller, amount);
-            self.erc20._transfer(sender, recipient, amount);
-            true
         }
 
         /// Force transfer tokens from one address to another
@@ -415,8 +394,6 @@ trait IAllowlistCMTAT<TContractState> {
     // Token operations
     fn mint(ref self: TContractState, to: ContractAddress, amount: u256);
     fn burn(ref self: TContractState, from: ContractAddress, amount: u256);
-    fn transfer(ref self: TContractState, recipient: ContractAddress, amount: u256) -> bool;
-    fn transfer_from(ref self: TContractState, sender: ContractAddress, recipient: ContractAddress, amount: u256) -> bool;
     fn forced_transfer(ref self: TContractState, from: ContractAddress, to: ContractAddress, amount: u256) -> bool;
     
     // Allowlist management
