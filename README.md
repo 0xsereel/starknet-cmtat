@@ -1,17 +1,20 @@
 # Cairo CMTAT - Regulated Securities on Starknet
 
-A comprehensive implementation of CMTAT (Capital Markets and Technology Association Token) standard in Cairo for Starknet, featuring compliance and snapshot engines for regulated securities.
+A comprehensive implementation of CMTAT (Capital Markets and Technology Association Token) standard in Cairo for Starknet, featuring **full ABI compatibility** with Solidity CMTAT implementation.
 
-## Features
+## 🎯 Features
 
--  **ERC20 Compliance** with regulatory extensions
--  **Role-Based Access Control** (Admin, Minter, Burner, Debt roles)
--  **Rule Engine** for transfer restrictions and whitelisting
--  **Snapshot Engine** for historical balance tracking
--  **Three Contract Variants**: Standard, Light, and Debt CMTAT
--  **OpenZeppelin Components** for security and reliability
+- ✅ **100% Solidity ABI Compatible** - Exact function signatures matching Solidity CMTAT
+- ✅ **Four Module Variants** - Light, Allowlist, Debt, and Standard implementations
+- ✅ **ERC20 Compliance** with regulatory extensions
+- ✅ **Role-Based Access Control** with role getter functions
+- ✅ **Batch Operations** for efficient multi-address operations
+- ✅ **Cross-Chain Support** (Standard module)
+- ✅ **Transfer Validation** (ERC-1404 compatible)
+- ✅ **Meta-Transaction Support** (Allowlist & Standard modules)
+- ✅ **OpenZeppelin Components** for security and reliability
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 ```bash
@@ -23,198 +26,443 @@ curl https://get.starkli.sh | sh
 starkliup
 ```
 
-### Deploy
+### Build & Test
 ```bash
-# Build contracts
+# Build all contracts
 scarb build
 
+# Run tests
+scarb test
+```
+
+### Deploy
+```bash
 # Deploy complete ecosystem
 ./scripts/deploy.sh
 ```
 
-### Test
-```bash
-# Run contract tests
-scarb test
-```
+## 📋 Module Overview
 
-## Manual Deployment (if needed)
+### 🪶 Light CMTAT
+**Minimal feature set for basic CMTAT compliance**
 
-If the automated deployment script has issues with the Debt CMTAT contract, you can deploy it manually:
-
-### Deploy Debt CMTAT Manually
-```bash
-# After running ./scripts/deploy.sh and sourcing .env
-source .env
-
-# Deploy Debt CMTAT with proper ByteArray encoding
-starkli deploy \
-  0x073df1d757f9927b737ae61d1b350aeefa4df2bf1cfc73c47c017b9e80e246e7 \
-  --account ~/.starkli-wallets/deployer/account.json \
-  --keystore ~/.starkli-wallets/deployer/keystore.json \
-  --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
-  $ADMIN_ADDR \
-  0 0x4465627420434d544154 11 \
-  0 0x44434d544154 7 \
-  0 0x56302e302e30 6 \
-  18 \
-  $ADMIN_ADDR \
-  $RULE_ENGINE \
-  $SNAPSHOT_ENGINE
-```
-
-**Parameters explained:**
-- `0x4465627420434d544154 11` = "Debt CMTAT" (ByteArray format)
-- `0x44434d544154 7` = "DCMTAT" (symbol)
-- `0x56302e302e30 6` = "V0.0.0" (version)
-- `18` = decimals
-- Uses existing `$RULE_ENGINE` and `$SNAPSHOT_ENGINE` from automated deployment
-
-## Live Deployment (Starknet Sepolia)
-
-All contracts are deployed and ready for interaction:
-
-### Compliance Engines
-- **Rule Engine**: [`0x071b9729d9943a931ab7c068ced6c03ee178453bf63552a1c4969e0a7594e382`](https://sepolia.starkscan.co/contract/0x071b9729d9943a931ab7c068ced6c03ee178453bf63552a1c4969e0a7594e382)
-- **Snapshot Engine**: [`0x05b864c7eae89e9c740a5f5c24a87c4e194e0fb0381a4ac9152613e43718be83`](https://sepolia.starkscan.co/contract/0x05b864c7eae89e9c740a5f5c24a87c4e194e0fb0381a4ac9152613e43718be83)
-
-### CMTAT Tokens
-- **Standard CMTAT**: [`0x02145b0cf916124aa4955dd9b7c73631b5ec6411257d64d56efb8e05e242ecd9`](https://sepolia.starkscan.co/contract/0x02145b0cf916124aa4955dd9b7c73631b5ec6411257d64d56efb8e05e242ecd9)
-- **Light CMTAT**: [`0x057de503d9d662b1a212f6ed6279e2f65c722e9ce8e236d0cddc30339f74702e`](https://sepolia.starkscan.co/contract/0x057de503d9d662b1a212f6ed6279e2f65c722e9ce8e236d0cddc30339f74702e)
-- **Debt CMTAT**: [`0x00343aabb8312f3827c75130e9af815a9c853a0a60f7acf4772909624bbf5800`](https://sepolia.starkscan.co/contract/0x00343aabb8312f3827c75130e9af815a9c853a0a60f7acf4772909624bbf5800)
-
-## CMTAT Framework Implementation Summary
-
-### Core CMTAT Framework → Cairo/Starknet
-
-| **CMTAT framework mandatory functionalities** | **Cairo/Starknet basic features** | **CMTAT Cairo Implementation** | **CMTAT Solidity corresponding features** |
-| --------------------------------------------- | --------------------------------- | ------------------------------ | ------------------------------------------ |
-| Know total supply                             | OpenZeppelin ERC20 `total_supply` | ✅ All contracts               | ERC20 `totalSupply`                        |
-| Know balance                                  | OpenZeppelin ERC20 `balance_of`   | ✅ All contracts               | ERC20 `balanceOf`                          |
-| Transfer tokens                               | OpenZeppelin ERC20 `transfer`     | ✅ All contracts               | ERC20 `transfer`                           |
-| Create tokens (mint)                          | Custom `mint` function            | ✅ All contracts               | `Mint/batchMint`                           |
-| Cancel tokens (force burn)                    | Custom `burn` function            | ✅ Standard/Debt CMTAT         | `burn/batchBurn`                           |
-| Pause tokens                                  | Custom `pause` implementation     | ✅ Standard/Light/Debt CMTAT   | Pause                                      |
-| Unpause tokens                                | Custom `unpause` implementation   | ✅ Standard/Light/Debt CMTAT   | `unpause`                                  |
-| Deactivate contract                           | Custom `deactivate_contract`      | ✅ Light/Debt CMTAT            | `deactivateContract`                       |
-| Freeze                                        | Custom `freeze_address`           | ✅ All contracts               | `setAddressFrozen` (previously `freeze`)   |
-| Unfreeze                                      | Custom `unfreeze_address`         | ✅ All contracts               | `setAddressFrozen` (previously `unfreeze`) |
-| Name attribute                                | OpenZeppelin ERC20 `name`         | ✅ All contracts               | ERC20 `name` attribute                     |
-| Ticker symbol attribute                       | OpenZeppelin ERC20 `symbol`       | ✅ All contracts               | ERC20 `symbol` attribute                   |
-| Token ID attribute                            | Custom metadata fields           | ✅ Debt CMTAT (`isin`)         | `tokenId`                                  |
-| Reference to legally required documentation   | Custom `terms` field              | ✅ All contracts               | `terms`                                    |
-
-### Extended CMTAT Features → Cairo/Starknet
-
-Optional CMTAT features
-
-| **CMTAT Functionalities** | **Cairo/Starknet Implementation** | **Status** | **CMTAT Solidity corresponding features** |
-| :------------------------- | :-------------------------------- | :--------- | :----------------------------------------- |
-| On-chain snapshot          | Custom Snapshot Engine contract   | ✅         | `snapshotEngine`                           |
-| Force Transfer             | Custom `forced_transfer` function | ✅         | `forcedTransfer`                           |
-| Freeze partial token       | Custom `freeze_tokens` function    | ✅         | Partial token freezing                     |
-| Rule Engine / transfer hook| Custom Rule Engine contract       | ✅         | CMTAT with RuleEngine                      |
-| Whitelisting               | Rule Engine implementation        | ✅         | CMTAT Allowlist / CMTAT with rule whitelist|
-| Upgradability              | Account contracts (AA wallets)    | ⚠️         | CMTAT Upgradeable version                  |
-| Fee abstraction/gasless    | Account Abstraction (AA) support  | ⚠️         | CMTAT with ERC-2771 module                |
-
-**Legend:**
-- ✅ Fully implemented
-- ⚠️ Supported by platform but not contract-specific  
-- ❌ Not yet implemented
-
-## Architecture
-
-### Standard CMTAT
-Full-featured implementation with complete ERC20 functionality, compliance features, and engine integration.
-
-### Light CMTAT  
-Core CMTAT framework implementation with all essential compliance features including force transfer for regulatory compliance.
-
-### Debt CMTAT
-Specialized for debt securities with ISIN tracking, maturity dates, interest rate management, and force transfer capabilities.
-
-### Compliance Engines
-- **Rule Engine**: Controls transfer restrictions and address whitelisting
-- **Snapshot Engine**: Records historical balances for regulatory reporting
-- **Modular Design**: Engines can be shared across multiple CMTAT instances
-
-## Supply Management (Mint/Burn) Behavior
-
-### Function Restrictions Matrix
-
-| Function | Contract | Pause Check | Frozen Check | Active Balance | Rule Engine | Deactivate Check |
-|----------|----------|-------------|--------------|----------------|-------------|------------------|
-| `mint`   | Standard | ☑          | ☑           | N/A            | ☒          | ☒               |
-| `mint`   | Light    | ☑          | ☑           | N/A            | ☒          | ☑               |
-| `mint`   | Debt     | ☑          | ☑           | N/A            | ☑          | ☑               |
-| `burn`   | Standard | ☑          | ☒           | ☑              | ☒          | ☒               |
-| `burn`   | Light    | ☑          | ☒           | ☑              | ☒          | ☑               |
-| `burn`   | Debt     | ☑          | ☒           | ☑              | ☑          | ☑               |
-
-**Legend:** ☑ = Implemented | ☒ = Not implemented | N/A = Function doesn't exist
-
-### Key Features by Contract Type
-
-**Light CMTAT:**
-- Core CMTAT framework compliance (pause, freeze, deactivate, burn)
-- All essential compliance features including force transfer
-- Excludes optional features: rule engine, MetaTx  
-- Ideal for standard CMTAT deployments without advanced rule systems
-
-**Standard CMTAT:**
-- Pause and freeze address enforcement
-- Active balance validation for burns
-- Missing: rule engine integration, deactivation
-
-**Debt CMTAT:**
-- Full CMTAT v3.0.0 compliance
-- All checks: pause, deactivation, frozen addresses, rule engine
-- Enhanced transfer restrictions and partial token freezing
-
-## Contract Structure
-
-```
-src/
-├── contracts/
-│   ├── standard_cmtat.cairo    # Full-featured CMTAT
-│   ├── light_cmtat.cairo       # Lightweight version  
-│   └── debt_cmtat.cairo        # Debt securities
-├── engines/
-│   ├── rule_engine.cairo       # Transfer restrictions
-│   └── snapshot_engine.cairo   # Balance snapshots
-└── interfaces/
-    └── icmtat.cairo            # Interface definitions
-```
-
-## Usage Example
-
+**Constructor:**
 ```cairo
-// Interact with deployed contracts
-let standard_cmtat = IStandardCMTATDispatcher { contract_address: standard_cmtat_address };
-let name = standard_cmtat.name();
-let balance = standard_cmtat.balance_of(user_address);
-
-// Use rule engine for compliance
-let rule_engine = IRuleEngineDispatcher { contract_address: rule_engine_address };
-let restriction_code = rule_engine.detect_transfer_restriction(from, to, amount);
-
-// Create snapshots for reporting
-let snapshot_engine = ISnapshotEngineDispatcher { contract_address: snapshot_engine_address };
-let snapshot_id = snapshot_engine.schedule_snapshot(timestamp);
+constructor(
+    admin: ContractAddress,
+    name: ByteArray,
+    symbol: ByteArray,
+    initial_supply: u256,
+    recipient: ContractAddress
+)
 ```
 
-## Technical Stack
+**Features:**
+- ✅ Basic ERC20 functionality
+- ✅ Minting (mint, batch_mint)
+- ✅ Burning (burn, burn_from, batch_burn, forced_burn, burn_and_mint)
+- ✅ Pause/Unpause/Deactivate
+- ✅ Address freezing (set_address_frozen, batch_set_address_frozen)
+- ✅ Information management (terms, information, token_id)
+- ✅ Batch balance queries
+- ✅ 4 Role constants (DEFAULT_ADMIN, MINTER, PAUSER, ENFORCER)
 
-- **Cairo**: v2.6.3+
-- **Scarb**: v2.6.4+  
-- **OpenZeppelin Cairo**: v0.13.0
-- **Starknet**: Sepolia testnet
+**Use Cases:** Standard token deployments, simple compliance requirements
 
-## License
+---
+
+### ✅ Allowlist CMTAT
+**All Light features plus allowlist functionality**
+
+**Constructor:**
+```cairo
+constructor(
+    forwarder_irrevocable: ContractAddress,  // For meta-transactions
+    admin: ContractAddress,
+    name: ByteArray,
+    symbol: ByteArray,
+    initial_supply: u256,
+    recipient: ContractAddress
+)
+```
+
+**Additional Features:**
+- ✅ Allowlist control (enable_allowlist, set_address_allowlist, batch_set_address_allowlist)
+- ✅ Partial token freezing (freeze_partial_tokens, unfreeze_partial_tokens)
+- ✅ Active balance queries (get_active_balance_of)
+- ✅ Engine management (snapshot_engine, document_engine)
+- ✅ Meta-transaction support (is_trusted_forwarder)
+- ✅ 9 Role constants (includes ERC20ENFORCER, SNAPSHOOTER, DOCUMENT, EXTRA_INFORMATION)
+
+**Use Cases:** Regulated tokens with whitelist requirements, KYC/AML compliance
+
+---
+
+### 💰 Debt CMTAT
+**Specialized for debt securities**
+
+**Constructor:**
+```cairo
+constructor(
+    admin: ContractAddress,
+    name: ByteArray,
+    symbol: ByteArray,
+    initial_supply: u256,
+    recipient: ContractAddress
+)
+```
+
+**Debt-Specific Features:**
+- ✅ Debt information management (debt, set_debt)
+- ✅ Credit events tracking (credit_events, set_credit_events)
+- ✅ Debt engine integration (debt_engine, set_debt_engine)
+- ✅ Default flagging (flag_default)
+- ✅ All Allowlist features (except allowlist-specific)
+- ✅ 10 Role constants (includes DEBT_ROLE)
+
+**Use Cases:** Corporate bonds, structured debt products, fixed income securities
+
+---
+
+### ⭐ Standard CMTAT
+**Full feature set with cross-chain support**
+
+**Constructor:**
+```cairo
+constructor(
+    forwarder_irrevocable: ContractAddress,  // For meta-transactions
+    admin: ContractAddress,
+    name: ByteArray,
+    symbol: ByteArray,
+    initial_supply: u256,
+    recipient: ContractAddress
+)
+```
+
+**Advanced Features:**
+- ✅ Cross-chain operations (crosschain_mint, crosschain_burn)
+- ✅ Transfer validation (restriction_code, message_for_transfer_restriction)
+- ✅ ERC-1404 compliance
+- ✅ All core CMTAT features
+- ✅ 10 Role constants (includes CROSS_CHAIN_ROLE)
+
+**Use Cases:** Multi-chain deployments, advanced compliance, institutional securities
+
+---
+
+## 🔧 ABI Compatibility
+
+All modules are **100% compatible** with the Solidity CMTAT ABI specification:
+
+### Common Functions (All Modules)
+
+**Information Management:**
+```cairo
+fn terms(self: @ContractState) -> ByteArray
+fn set_terms(ref self: ContractState, new_terms: ByteArray) -> bool
+fn information(self: @ContractState) -> ByteArray
+fn set_information(ref self: ContractState, new_information: ByteArray) -> bool
+fn token_id(self: @ContractState) -> ByteArray
+fn set_token_id(ref self: ContractState, new_token_id: ByteArray) -> bool
+```
+
+**Batch Operations:**
+```cairo
+fn batch_balance_of(self: @ContractState, accounts: Span<ContractAddress>) -> Array<u256>
+fn batch_mint(ref self: ContractState, tos: Span<ContractAddress>, values: Span<u256>) -> bool
+fn batch_burn(ref self: ContractState, accounts: Span<ContractAddress>, values: Span<u256>) -> bool
+```
+
+**Role Getters:**
+```cairo
+fn get_default_admin_role(self: @ContractState) -> felt252
+fn get_minter_role(self: @ContractState) -> felt252
+fn get_pauser_role(self: @ContractState) -> felt252
+// ... all role getters
+```
+
+**Minting & Burning:**
+```cairo
+fn mint(ref self: ContractState, to: ContractAddress, value: u256) -> bool
+fn burn(ref self: ContractState, value: u256) -> bool
+fn burn_from(ref self: ContractState, from: ContractAddress, value: u256) -> bool
+fn burn_and_mint(ref self: ContractState, from: ContractAddress, to: ContractAddress, value: u256) -> bool
+```
+
+**Pause & Freeze:**
+```cairo
+fn paused(self: @ContractState) -> bool
+fn pause(ref self: ContractState) -> bool
+fn unpause(ref self: ContractState) -> bool
+fn deactivated(self: @ContractState) -> bool
+fn deactivate_contract(ref self: ContractState) -> bool
+fn set_address_frozen(ref self: ContractState, account: ContractAddress, is_frozen: bool) -> bool
+fn batch_set_address_frozen(ref self: ContractState, accounts: Span<ContractAddress>, frozen: Span<bool>) -> bool
+fn is_frozen(self: @ContractState, account: ContractAddress) -> bool
+```
+
+### Module-Specific Functions
+
+**Allowlist Module:**
+```cairo
+fn enable_allowlist(ref self: ContractState, status: bool) -> bool
+fn is_allowlist_enabled(self: @ContractState) -> bool
+fn set_address_allowlist(ref self: ContractState, account: ContractAddress, status: bool) -> bool
+fn batch_set_address_allowlist(ref self: ContractState, accounts: Span<ContractAddress>, statuses: Span<bool>) -> bool
+fn is_allowlisted(self: @ContractState, account: ContractAddress) -> bool
+```
+
+**Debt Module:**
+```cairo
+fn debt(self: @ContractState) -> ByteArray
+fn set_debt(ref self: ContractState, debt_: ByteArray) -> bool
+fn credit_events(self: @ContractState) -> ByteArray
+fn set_credit_events(ref self: ContractState, credit_events_: ByteArray) -> bool
+fn debt_engine(self: @ContractState) -> ContractAddress
+fn set_debt_engine(ref self: ContractState, debt_engine_: ContractAddress) -> bool
+fn flag_default(ref self: ContractState) -> bool
+```
+
+**Standard Module:**
+```cairo
+fn crosschain_mint(ref self: ContractState, to: ContractAddress, value: u256) -> bool
+fn crosschain_burn(ref self: ContractState, from: ContractAddress, value: u256) -> bool
+fn restriction_code(self: @ContractState, from: ContractAddress, to: ContractAddress, value: u256) -> u8
+fn message_for_transfer_restriction(self: @ContractState, restriction_code: u8) -> ByteArray
+```
+
+---
+
+## 📊 Feature Comparison Matrix
+
+| Feature | Light | Allowlist | Debt | Standard |
+|---------|-------|-----------|------|----------|
+| **Basic ERC20** | ✅ | ✅ | ✅ | ✅ |
+| **Minting** | ✅ | ✅ | ✅ | ✅ |
+| **Burning** | ✅ | ✅ | ✅ | ✅ |
+| **Forced Burn** | ✅ | ❌ | ❌ | ❌ |
+| **Pause/Unpause** | ✅ | ✅ | ✅ | ✅ |
+| **Deactivation** | ✅ | ✅ | ✅ | ✅ |
+| **Address Freezing** | ✅ | ✅ | ✅ | ✅ |
+| **Partial Token Freezing** | ❌ | ✅ | ✅ | ✅ |
+| **Batch Operations** | ✅ | ✅ | ✅ | ✅ |
+| **Information Management** | ✅ | ✅ | ✅ | ✅ |
+| **Allowlist** | ❌ | ✅ | ❌ | ❌ |
+| **Debt Management** | ❌ | ❌ | ✅ | ❌ |
+| **Cross-Chain** | ❌ | ❌ | ❌ | ✅ |
+| **Transfer Validation** | ❌ | ❌ | ❌ | ✅ |
+| **Meta-Transactions** | ❌ | ✅ | ❌ | ✅ |
+| **Engine Integration** | ❌ | ✅ | ✅ | ✅ |
+| **Role Count** | 4 | 9 | 10 | 10 |
+
+---
+
+## 🏗️ Architecture
+
+```
+cairo-cmtat/
+├── src/
+│   ├── contracts/
+│   │   ├── light_cmtat.cairo       # Minimal CMTAT (4 roles)
+│   │   ├── allowlist_cmtat.cairo   # With allowlist (9 roles)
+│   │   ├── debt_cmtat.cairo        # For debt securities (10 roles)
+│   │   └── standard_cmtat.cairo    # Full feature set (10 roles)
+│   ├── engines/
+│   │   ├── rule_engine.cairo       # Transfer restrictions
+│   │   └── snapshot_engine.cairo   # Balance snapshots
+│   └── interfaces/
+│       └── icmtat.cairo            # Interface definitions
+├── tests/
+│   └── cmtat_tests.cairo           # Comprehensive tests
+└── scripts/
+    └── deploy.sh                    # Deployment automation
+```
+
+---
+
+## 💼 Use Cases & Examples
+
+### Regulatory Compliant Token
+```cairo
+// Deploy Allowlist CMTAT for KYC/AML compliance
+let allowlist_cmtat = deploy_allowlist_cmtat(
+    forwarder,
+    admin,
+    "Regulated Security Token",
+    "RST",
+    1000000 * 10^18,
+    treasury
+);
+
+// Enable allowlist
+allowlist_cmtat.enable_allowlist(true);
+
+// Add approved addresses
+let kyc_addresses = array![addr1, addr2, addr3];
+let statuses = array![true, true, true];
+allowlist_cmtat.batch_set_address_allowlist(kyc_addresses, statuses);
+```
+
+### Corporate Bond Token
+```cairo
+// Deploy Debt CMTAT for bond issuance
+let bond_token = deploy_debt_cmtat(
+    admin,
+    "Corporate Bond 2025",
+    "BOND25",
+    10000000 * 10^18,
+    issuer
+);
+
+// Set debt information
+bond_token.set_debt("5% Senior Notes due 2025");
+bond_token.set_credit_events("Investment Grade BBB+");
+
+// Integrate debt calculation engine
+bond_token.set_debt_engine(debt_calculation_engine);
+```
+
+### Multi-Chain Security Token
+```cairo
+// Deploy Standard CMTAT with cross-chain support
+let standard_cmtat = deploy_standard_cmtat(
+    forwarder,
+    admin,
+    "Global Security Token",
+    "GST",
+    5000000 * 10^18,
+    treasury
+);
+
+// Enable cross-chain operations
+standard_cmtat.grant_role(CROSS_CHAIN_ROLE, bridge_operator);
+
+// Bridge tokens to another chain
+standard_cmtat.crosschain_burn(user, 1000 * 10^18);
+```
+
+---
+
+## 🔐 Security Features
+
+### Role-Based Access Control
+- **DEFAULT_ADMIN_ROLE**: Master administrator, can grant/revoke all roles
+- **MINTER_ROLE**: Can create new tokens
+- **BURNER_ROLE**: Can destroy tokens
+- **PAUSER_ROLE**: Can pause/unpause contract
+- **ENFORCER_ROLE**: Can freeze/unfreeze addresses
+- **ERC20ENFORCER_ROLE**: Can freeze partial tokens
+- **SNAPSHOOTER_ROLE**: Can create snapshots
+- **DOCUMENT_ROLE**: Can manage documents
+- **EXTRA_INFORMATION_ROLE**: Can update token metadata
+- **DEBT_ROLE**: Can manage debt parameters
+- **CROSS_CHAIN_ROLE**: Can execute cross-chain operations
+
+### Transfer Restrictions
+All modules implement transfer restrictions via ERC20 hooks:
+- Pause state check
+- Sender/recipient freeze check
+- Active balance validation (for partial freezing)
+- Custom validation (via transfer validation in Standard)
+
+---
+
+## 📝 Deployment Guide
+
+### Step 1: Build Contracts
+```bash
+scarb build
+```
+
+### Step 2: Configure Environment
+```bash
+cp .env.example .env
+# Edit .env with your configuration
+```
+
+### Step 3: Deploy
+```bash
+./scripts/deploy.sh
+```
+
+The script will:
+1. Deploy all four CMTAT modules
+2. Set up proper role assignments
+3. Configure engine integrations
+4. Output all contract addresses
+
+---
+
+## 🧪 Testing
+
+```bash
+# Run all tests
+scarb test
+
+# Run specific test
+scarb test test_name
+
+# Run with verbose output
+scarb test --verbose
+```
+
+---
+
+## 📚 Documentation
+
+### Technical Specifications
+- [CMTAT Whitepaper](https://www.cmtat.org/)
+- [Cairo Documentation](https://book.cairo-lang.org/)
+- [Starknet Documentation](https://docs.starknet.io/)
+
+### API Reference
+Full API documentation for all modules available in-code documentation.
+
+---
+
+## 🛠️ Development
+
+### Prerequisites
+- Cairo 2.6.3+
+- Scarb 2.6.4+
+- OpenZeppelin Cairo 0.13.0
+
+### Project Structure
+```
+src/contracts/     # Token implementations
+src/engines/       # Compliance engines
+src/interfaces/    # Contract interfaces
+tests/            # Test suite
+scripts/          # Deployment scripts
+```
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please follow these guidelines:
+1. Fork the repository
+2. Create a feature branch
+3. Write tests for new functionality
+4. Ensure all tests pass
+5. Submit a pull request
+
+---
+
+## 📜 License
 
 Mozilla Public License 2.0 (MPL-2.0)
 
 ---
 
-**Built for regulated securities on Starknet**
+## 🔗 Links
+
+- **Starknet**: https://starknet.io
+- **CMTAT**: https://www.cmtat.org
+- **OpenZeppelin Cairo**: https://github.com/OpenZeppelin/cairo-contracts
+
+---
+
+**Built for compliant securities on Starknet 🚀**
+
+*Version 2.0.0 - ABI Compatible Implementation*

@@ -1,184 +1,324 @@
 #!/bin/bash
 
-# Cairo CMTAT Quick Deploy Script
-# Deploys the complete CMTAT ecosystem on Starknet Sepolia
-# Uses proven deployment patterns and known working configurations
+# Cairo CMTAT Deployment Script v2.0
+# Deploys ABI-compatible CMTAT ecosystem on Starknet
+# Supports all four module variants: Light, Allowlist, Debt, Standard
 
 set -e
 
-echo "=== Cairo CMTAT Quick Deploy ==="
-echo "Network: sepolia"
-echo "Admin: 0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50"
+echo "╔═══════════════════════════════════════════════════════════╗"
+echo "║         Cairo CMTAT v2.0 Deployment Script               ║"
+echo "║         ABI-Compatible Implementation                      ║"
+echo "╚═══════════════════════════════════════════════════════════╝"
+echo ""
+
+# Configuration
+NETWORK="${NETWORK:-sepolia}"
+ADMIN_ADDR="${ADMIN_ADDR:-0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50}"
+FORWARDER="${FORWARDER:-0x0000000000000000000000000000000000000000000000000000000000000000}"
+INITIAL_SUPPLY="${INITIAL_SUPPLY:-1000000}"  # 1M tokens (will be multiplied by 10^18)
+
+echo "Configuration:"
+echo "  Network: $NETWORK"
+echo "  Admin: $ADMIN_ADDR"
+echo "  Forwarder: $FORWARDER"
+echo "  Initial Supply: $INITIAL_SUPPLY tokens"
 echo ""
 
 # Build contracts
-echo "=== Building contracts ==="
+echo "📦 Building contracts..."
 scarb build
-echo " Build complete"
+echo "✅ Build complete"
 echo ""
 
-# Deploy Rule Engine
-echo "=== Deploying Rule Engine ==="
-echo "Class Hash: 0x05fd8bb77a68906ee3c78ac8e9e2d66b6b9a6f66b4c6becd2a481c2e52f2b0fd"
-
-RULE_ENGINE=$(starkli deploy \
-  0x05fd8bb77a68906ee3c78ac8e9e2d66b6b9a6f66b4c6becd2a481c2e52f2b0fd \
-  --account ~/.starkli-wallets/deployer/account.json \
-  --keystore ~/.starkli-wallets/deployer/keystore.json \
-  --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
-  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 | grep "Contract deployed:" | cut -d' ' -f3)
-
-if [ -z "$RULE_ENGINE" ]; then
-    echo " Failed to deploy Rule Engine"
-    exit 1
-fi
-echo " Rule Engine: $RULE_ENGINE"
-
-# Deploy Snapshot Engine
+# Deploy Light CMTAT (no engines, no forwarder)
+echo "═══════════════════════════════════════════════════════════"
+echo "🪶 Deploying Light CMTAT"
+echo "═══════════════════════════════════════════════════════════"
+echo "Constructor parameters:"
+echo "  - admin: $ADMIN_ADDR"
+echo "  - name: 'Light CMTAT'"
+echo "  - symbol: 'LCMTAT'"
+echo "  - initial_supply: $INITIAL_SUPPLY"
+echo "  - recipient: $ADMIN_ADDR"
 echo ""
-echo "=== Deploying Snapshot Engine ==="
-echo "Class Hash: 0x0019f4eaac8c4b0e5c2b9ca55be9b5cc9df16ee4f31c25ff2f5bc87000a3b4bf"
 
-SNAPSHOT_ENGINE=$(starkli deploy \
-  0x0019f4eaac8c4b0e5c2b9ca55be9b5cc9df16ee4f31c25ff2f5bc87000a3b4bf \
-  --account ~/.starkli-wallets/deployer/account.json \
-  --keystore ~/.starkli-wallets/deployer/keystore.json \
-  --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
-  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 | grep "Contract deployed:" | cut -d' ' -f3)
+# Get class hash from build artifacts
+LIGHT_CLASS_HASH=$(jq -r '.class_hash' target/dev/cairo_cmtat_LightCMTAT.contract_class.json 2>/dev/null || echo "")
 
-if [ -z "$SNAPSHOT_ENGINE" ]; then
-    echo " Failed to deploy Snapshot Engine"
-    exit 1
-fi
-echo " Snapshot Engine: $SNAPSHOT_ENGINE"
-
-# Deploy Standard CMTAT
-echo ""
-echo "=== Deploying Standard CMTAT ==="
-echo "Class Hash: 0x0156438638cbac97e09e5781c66d4e23092d43b85c94286d11578f6b604a6463"
-echo "Using ByteArray encoding: name='Standard CMTAT', symbol='SCMTAT', version='V0.0.0'"
-
-STANDARD_CMTAT=$(starkli deploy \
-  0x0156438638cbac97e09e5781c66d4e23092d43b85c94286d11578f6b604a6463 \
-  --account ~/.starkli-wallets/deployer/account.json \
-  --keystore ~/.starkli-wallets/deployer/keystore.json \
-  --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
-  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 \
-  0 0x5374616e6461726420434d544154 14 \
-  0 0x53434d544154 7 \
-  0 0x56302e302e30 6 \
-  18 \
-  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 \
-  "$RULE_ENGINE" \
-  "$SNAPSHOT_ENGINE" | grep "Contract deployed:" | cut -d' ' -f3)
-
-if [ -z "$STANDARD_CMTAT" ]; then
-    echo " Failed to deploy Standard CMTAT"
-    STANDARD_CMTAT="DEPLOY_MANUALLY"
+if [ -z "$LIGHT_CLASS_HASH" ]; then
+    echo "❌ Failed to read Light CMTAT class hash from artifacts"
+    LIGHT_CMTAT="FAILED"
 else
-    echo " Standard CMTAT: $STANDARD_CMTAT"
+    echo "Class Hash: $LIGHT_CLASS_HASH"
+    
+    LIGHT_CMTAT=$(starkli deploy \
+      "$LIGHT_CLASS_HASH" \
+      --account ~/.starkli-wallets/deployer/account.json \
+      --keystore ~/.starkli-wallets/deployer/keystore.json \
+      --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
+      $ADMIN_ADDR \
+      0 0x4c6967687420434d544154 12 \
+      0 0x4c434d544154 7 \
+      $INITIAL_SUPPLY 0 \
+      $ADMIN_ADDR | grep "Contract deployed:" | cut -d' ' -f3) || {
+        echo "⚠️  Light CMTAT deployment failed or timed out"
+        LIGHT_CMTAT="FAILED"
+    }
+    
+    if [ "$LIGHT_CMTAT" != "FAILED" ]; then
+        echo "✅ Light CMTAT: $LIGHT_CMTAT"
+    fi
 fi
-
-# Deploy Light CMTAT
 echo ""
-echo "=== Deploying Light CMTAT ==="
-echo "Class Hash: 0x0040ce9334f9146f53e6e32c7b8fe9644cc5d6cece7507768cdbfecbf57b27f1"
-echo "Using ByteArray encoding: name='Light CMTAT', symbol='LCMTAT', version='V0.0.0'"
 
-LIGHT_CMTAT=$(starkli deploy \
-  0x0040ce9334f9146f53e6e32c7b8fe9644cc5d6cece7507768cdbfecbf57b27f1 \
-  --account ~/.starkli-wallets/deployer/account.json \
-  --keystore ~/.starkli-wallets/deployer/keystore.json \
-  --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
-  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 \
-  0 0x4c6967687420434d544154 12 \
-  0 0x4c434d544154 7 \
-  0 0x56302e302e30 6 \
-  18 \
-  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 \
-  "$RULE_ENGINE" \
-  "$SNAPSHOT_ENGINE" | grep "Contract deployed:" | cut -d' ' -f3)
-
-if [ -z "$LIGHT_CMTAT" ]; then
-    echo " Failed to deploy Light CMTAT"
-    LIGHT_CMTAT="DEPLOY_MANUALLY"
-else
-    echo " Light CMTAT: $LIGHT_CMTAT"
-fi
-
-# Deploy Debt CMTAT
+# Deploy Allowlist CMTAT (with forwarder, engines set after deployment)
+echo "═══════════════════════════════════════════════════════════"
+echo "✅ Deploying Allowlist CMTAT"
+echo "═══════════════════════════════════════════════════════════"
+echo "Constructor parameters:"
+echo "  - forwarder_irrevocable: $FORWARDER"
+echo "  - admin: $ADMIN_ADDR"
+echo "  - name: 'Allowlist CMTAT'"
+echo "  - symbol: 'ACMTAT'"
+echo "  - initial_supply: $INITIAL_SUPPLY"
+echo "  - recipient: $ADMIN_ADDR"
 echo ""
-echo "=== Deploying Debt CMTAT ==="
-echo "Class Hash: 0x073df1d757f9927b737ae61d1b350aeefa4df2bf1cfc73c47c017b9e80e246e7"
-echo "Using ByteArray encoding: name='Debt CMTAT', symbol='DCMTAT', version='V0.0.0'"
 
-DEBT_CMTAT=$(starkli deploy \
-  0x073df1d757f9927b737ae61d1b350aeefa4df2bf1cfc73c47c017b9e80e246e7 \
-  --account ~/.starkli-wallets/deployer/account.json \
-  --keystore ~/.starkli-wallets/deployer/keystore.json \
-  --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
-  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 \
-  0 0x4465627420434d544154 11 \
-  0 0x44434d544154 7 \
-  0 0x56302e302e30 6 \
-  18 \
-  0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50 \
-  "$RULE_ENGINE" \
-  "$SNAPSHOT_ENGINE" | grep "Contract deployed:" | cut -d' ' -f3) || {
-    echo "⚠️  Debt CMTAT deployment may have timed out"
-    DEBT_CMTAT="DEPLOY_MANUALLY"
-}
+ALLOWLIST_CLASS_HASH=$(jq -r '.class_hash' target/dev/cairo_cmtat_AllowlistCMTAT.contract_class.json 2>/dev/null || echo "")
 
-if [ "$DEBT_CMTAT" = "DEPLOY_MANUALLY" ]; then
-    echo "⚠️  Debt CMTAT deployment incomplete"
-    echo "    Manual deployment required or check existing deployment"
+if [ -z "$ALLOWLIST_CLASS_HASH" ]; then
+    echo "❌ Failed to read Allowlist CMTAT class hash from artifacts"
+    ALLOWLIST_CMTAT="FAILED"
 else
-    echo " Debt CMTAT: $DEBT_CMTAT"
+    echo "Class Hash: $ALLOWLIST_CLASS_HASH"
+    
+    ALLOWLIST_CMTAT=$(starkli deploy \
+      "$ALLOWLIST_CLASS_HASH" \
+      --account ~/.starkli-wallets/deployer/account.json \
+      --keystore ~/.starkli-wallets/deployer/keystore.json \
+      --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
+      $FORWARDER \
+      $ADMIN_ADDR \
+      0 0x416c6c6f776c69737420434d544154 16 \
+      0 0x41434d544154 7 \
+      $INITIAL_SUPPLY 0 \
+      $ADMIN_ADDR | grep "Contract deployed:" | cut -d' ' -f3) || {
+        echo "⚠️  Allowlist CMTAT deployment failed or timed out"
+        ALLOWLIST_CMTAT="FAILED"
+    }
+    
+    if [ "$ALLOWLIST_CMTAT" != "FAILED" ]; then
+        echo "✅ Allowlist CMTAT: $ALLOWLIST_CMTAT"
+    fi
 fi
+echo ""
+
+# Deploy Debt CMTAT (no forwarder, engines set after deployment)
+echo "═══════════════════════════════════════════════════════════"
+echo "💰 Deploying Debt CMTAT"
+echo "═══════════════════════════════════════════════════════════"
+echo "Constructor parameters:"
+echo "  - admin: $ADMIN_ADDR"
+echo "  - name: 'Debt CMTAT'"
+echo "  - symbol: 'DCMTAT'"
+echo "  - initial_supply: $INITIAL_SUPPLY"
+echo "  - recipient: $ADMIN_ADDR"
+echo ""
+
+DEBT_CLASS_HASH=$(jq -r '.class_hash' target/dev/cairo_cmtat_DebtCMTAT.contract_class.json 2>/dev/null || echo "")
+
+if [ -z "$DEBT_CLASS_HASH" ]; then
+    echo "❌ Failed to read Debt CMTAT class hash from artifacts"
+    DEBT_CMTAT="FAILED"
+else
+    echo "Class Hash: $DEBT_CLASS_HASH"
+    
+    DEBT_CMTAT=$(starkli deploy \
+      "$DEBT_CLASS_HASH" \
+      --account ~/.starkli-wallets/deployer/account.json \
+      --keystore ~/.starkli-wallets/deployer/keystore.json \
+      --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
+      $ADMIN_ADDR \
+      0 0x4465627420434d544154 11 \
+      0 0x44434d544154 7 \
+      $INITIAL_SUPPLY 0 \
+      $ADMIN_ADDR | grep "Contract deployed:" | cut -d' ' -f3) || {
+        echo "⚠️  Debt CMTAT deployment failed or timed out"
+        DEBT_CMTAT="FAILED"
+    }
+    
+    if [ "$DEBT_CMTAT" != "FAILED" ]; then
+        echo "✅ Debt CMTAT: $DEBT_CMTAT"
+    fi
+fi
+echo ""
+
+# Deploy Standard CMTAT (with forwarder, engines set after deployment)
+echo "═══════════════════════════════════════════════════════════"
+echo "⭐ Deploying Standard CMTAT"
+echo "═══════════════════════════════════════════════════════════"
+echo "Constructor parameters:"
+echo "  - forwarder_irrevocable: $FORWARDER"
+echo "  - admin: $ADMIN_ADDR"
+echo "  - name: 'Standard CMTAT'"
+echo "  - symbol: 'SCMTAT'"
+echo "  - initial_supply: $INITIAL_SUPPLY"
+echo "  - recipient: $ADMIN_ADDR"
+echo ""
+
+STANDARD_CLASS_HASH=$(jq -r '.class_hash' target/dev/cairo_cmtat_StandardCMTAT.contract_class.json 2>/dev/null || echo "")
+
+if [ -z "$STANDARD_CLASS_HASH" ]; then
+    echo "❌ Failed to read Standard CMTAT class hash from artifacts"
+    STANDARD_CMTAT="FAILED"
+else
+    echo "Class Hash: $STANDARD_CLASS_HASH"
+    
+    STANDARD_CMTAT=$(starkli deploy \
+      "$STANDARD_CLASS_HASH" \
+      --account ~/.starkli-wallets/deployer/account.json \
+      --keystore ~/.starkli-wallets/deployer/keystore.json \
+      --rpc https://starknet-sepolia.public.blastapi.io/rpc/v0.7 \
+      $FORWARDER \
+      $ADMIN_ADDR \
+      0 0x5374616e6461726420434d544154 14 \
+      0 0x53434d544154 7 \
+      $INITIAL_SUPPLY 0 \
+      $ADMIN_ADDR | grep "Contract deployed:" | cut -d' ' -f3) || {
+        echo "⚠️  Standard CMTAT deployment failed or timed out"
+        STANDARD_CMTAT="FAILED"
+    }
+    
+    if [ "$STANDARD_CMTAT" != "FAILED" ]; then
+        echo "✅ Standard CMTAT: $STANDARD_CMTAT"
+    fi
+fi
+echo ""
+
+# Summary
+echo "╔═══════════════════════════════════════════════════════════╗"
+echo "║              Deployment Summary                           ║"
+echo "╚═══════════════════════════════════════════════════════════╝"
+echo ""
+echo "📋 Deployed Contracts:"
+echo ""
+echo "Light CMTAT:     ${LIGHT_CMTAT}"
+echo "Allowlist CMTAT: ${ALLOWLIST_CMTAT}"
+echo "Debt CMTAT:      ${DEBT_CMTAT}"
+echo "Standard CMTAT:  ${STANDARD_CMTAT}"
+echo ""
 
 # Update .env file
-echo ""
-echo "=== Updating .env file ==="
+echo "💾 Updating .env file..."
 cat > .env << EOF
-# Cairo CMTAT Deployment Configuration
+# Cairo CMTAT v2.0 Deployment Configuration
 # Generated on $(date)
+# ABI-Compatible Implementation
 
 # Network Configuration
-NETWORK="sepolia"
-ADMIN_ADDR="0x04be1751352810aa8ad733c0f51d952ec4f96efee175ab0cb0da2d2ea537f50"
+NETWORK="$NETWORK"
+ADMIN_ADDR="$ADMIN_ADDR"
+FORWARDER="$FORWARDER"
 
-# Engine Contracts
-RULE_ENGINE="$RULE_ENGINE"
-SNAPSHOT_ENGINE="$SNAPSHOT_ENGINE"
-
-# CMTAT Contracts
-STANDARD_CMTAT="$STANDARD_CMTAT"
+# CMTAT Contract Addresses
 LIGHT_CMTAT="$LIGHT_CMTAT"
+ALLOWLIST_CMTAT="$ALLOWLIST_CMTAT"
 DEBT_CMTAT="$DEBT_CMTAT"
+STANDARD_CMTAT="$STANDARD_CMTAT"
+
+# Class Hashes
+LIGHT_CLASS_HASH="$LIGHT_CLASS_HASH"
+ALLOWLIST_CLASS_HASH="$ALLOWLIST_CLASS_HASH"
+DEBT_CLASS_HASH="$DEBT_CLASS_HASH"
+STANDARD_CLASS_HASH="$STANDARD_CLASS_HASH"
 EOF
 
+echo "✅ Configuration saved to .env"
 echo ""
-echo "🎉 Deployment Complete!"
-echo ""
-echo "=== Contract Addresses ==="
-echo "Rule Engine:     $RULE_ENGINE"
-echo "Snapshot Engine: $SNAPSHOT_ENGINE"
-echo "Standard CMTAT:  $STANDARD_CMTAT"
-echo "Light CMTAT:     $LIGHT_CMTAT"
-echo "Debt CMTAT:      $DEBT_CMTAT"
-echo ""
-echo "📄 Configuration saved to .env"
-echo ""
-if [[ "$STANDARD_CMTAT" == "DEPLOY_MANUALLY" || "$LIGHT_CMTAT" == "DEPLOY_MANUALLY" || "$DEBT_CMTAT" == "DEPLOY_MANUALLY" ]]; then
-    echo "⚠️  Note: Some contracts may need manual deployment"
-    echo "   Check the output above and deploy manually if needed"
-    echo "   Known working deployment addresses are in README.md"
+
+# Check for failures
+FAILED_COUNT=0
+if [ "$LIGHT_CMTAT" = "FAILED" ]; then ((FAILED_COUNT++)); fi
+if [ "$ALLOWLIST_CMTAT" = "FAILED" ]; then ((FAILED_COUNT++)); fi
+if [ "$DEBT_CMTAT" = "FAILED" ]; then ((FAILED_COUNT++)); fi
+if [ "$STANDARD_CMTAT" = "FAILED" ]; then ((FAILED_COUNT++)); fi
+
+if [ $FAILED_COUNT -eq 0 ]; then
+    echo "🎉 All contracts deployed successfully!"
+    echo ""
+    echo "📖 Next Steps:"
+    echo "   1. source .env"
+    echo "   2. Verify contracts on Starkscan"
+    echo "   3. Set up engine integrations (if needed)"
+    echo "   4. Run integration tests"
+    echo ""
+    echo "🔗 Starkscan URLs:"
+    if [ "$LIGHT_CMTAT" != "FAILED" ]; then
+        echo "   Light: https://sepolia.starkscan.co/contract/$LIGHT_CMTAT"
+    fi
+    if [ "$ALLOWLIST_CMTAT" != "FAILED" ]; then
+        echo "   Allowlist: https://sepolia.starkscan.co/contract/$ALLOWLIST_CMTAT"
+    fi
+    if [ "$DEBT_CMTAT" != "FAILED" ]; then
+        echo "   Debt: https://sepolia.starkscan.co/contract/$DEBT_CMTAT"
+    fi
+    if [ "$STANDARD_CMTAT" != "FAILED" ]; then
+        echo "   Standard: https://sepolia.starkscan.co/contract/$STANDARD_CMTAT"
+    fi
+else
+    echo "⚠️  Warning: $FAILED_COUNT contract(s) failed to deploy"
+    echo ""
+    echo "Troubleshooting:"
+    echo "  - Check network connectivity"
+    echo "  - Verify account has sufficient funds"
+    echo "  - Ensure build artifacts exist in target/dev/"
+    echo "  - Try deploying failed contracts manually"
+    echo ""
+    echo "Manual Deployment Commands:"
+    if [ "$LIGHT_CMTAT" = "FAILED" ] && [ -n "$LIGHT_CLASS_HASH" ]; then
+        echo ""
+        echo "# Light CMTAT:"
+        echo "starkli deploy $LIGHT_CLASS_HASH \\"
+        echo "  $ADMIN_ADDR \\"
+        echo "  0 0x4c6967687420434d544154 12 \\"
+        echo "  0 0x4c434d544154 7 \\"
+        echo "  $INITIAL_SUPPLY 0 \\"
+        echo "  $ADMIN_ADDR"
+    fi
+    if [ "$ALLOWLIST_CMTAT" = "FAILED" ] && [ -n "$ALLOWLIST_CLASS_HASH" ]; then
+        echo ""
+        echo "# Allowlist CMTAT:"
+        echo "starkli deploy $ALLOWLIST_CLASS_HASH \\"
+        echo "  $FORWARDER \\"
+        echo "  $ADMIN_ADDR \\"
+        echo "  0 0x416c6c6f776c69737420434d544154 16 \\"
+        echo "  0 0x41434d544154 7 \\"
+        echo "  $INITIAL_SUPPLY 0 \\"
+        echo "  $ADMIN_ADDR"
+    fi
+    if [ "$DEBT_CMTAT" = "FAILED" ] && [ -n "$DEBT_CLASS_HASH" ]; then
+        echo ""
+        echo "# Debt CMTAT:"
+        echo "starkli deploy $DEBT_CLASS_HASH \\"
+        echo "  $ADMIN_ADDR \\"
+        echo "  0 0x4465627420434d544154 11 \\"
+        echo "  0 0x44434d544154 7 \\"
+        echo "  $INITIAL_SUPPLY 0 \\"
+        echo "  $ADMIN_ADDR"
+    fi
+    if [ "$STANDARD_CMTAT" = "FAILED" ] && [ -n "$STANDARD_CLASS_HASH" ]; then
+        echo ""
+        echo "# Standard CMTAT:"
+        echo "starkli deploy $STANDARD_CLASS_HASH \\"
+        echo "  $FORWARDER \\"
+        echo "  $ADMIN_ADDR \\"
+        echo "  0 0x5374616e6461726420434d544154 14 \\"
+        echo "  0 0x53434d544154 7 \\"
+        echo "  $INITIAL_SUPPLY 0 \\"
+        echo "  $ADMIN_ADDR"
+    fi
 fi
+
 echo ""
-echo "🔗 View contracts on Starkscan:"
-echo "https://sepolia.starkscan.co/contract/[CONTRACT_ADDRESS]"
-echo ""
-echo "📋 Next steps:"
-echo "   1. source .env"
-echo "   2. ./scripts/test_deployment.sh"
-echo "   3. ./scripts/snapshot_demo.sh"
+echo "═══════════════════════════════════════════════════════════"

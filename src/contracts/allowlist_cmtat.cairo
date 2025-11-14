@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
-// Standard CMTAT Implementation - Full Feature Set
+// Allowlist CMTAT Implementation - Transfer restrictions via allowlist
 
 use starknet::ContractAddress;
 
 #[starknet::contract]
-mod StandardCMTAT {
-    use openzeppelin::token::erc20::{ERC20Component};
+mod AllowlistCMTAT {
+    use openzeppelin::token::erc20::ERC20Component;
     use openzeppelin::access::accesscontrol::{AccessControlComponent, DEFAULT_ADMIN_ROLE};
     use openzeppelin::introspection::src5::SRC5Component;
     use starknet::{ContractAddress, get_caller_address};
@@ -22,15 +22,52 @@ mod StandardCMTAT {
     impl ERC20InternalImpl = ERC20Component::InternalImpl<ContractState>;
     impl AccessControlInternalImpl = AccessControlComponent::InternalImpl<ContractState>;
 
+    // ERC20 Hooks implementation with allowlist validation
+    impl ERC20HooksImpl of ERC20Component::ERC20HooksTrait<ContractState> {
+        fn before_update(
+            ref self: ERC20Component::ComponentState<ContractState>,
+            from: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256
+        ) {
+            let contract_state = ERC20Component::HasComponent::get_contract(@self);
+            
+            // Short-circuit if allowlist feature is disabled
+            if !contract_state.allowlist_enabled.read() {
+                return;
+            }
+            
+            let zero_address: ContractAddress = starknet::contract_address_const::<0>();
+            
+            // Skip allowlist check for minting (from == 0) and burning (recipient == 0)
+            if from != zero_address && recipient != zero_address {
+                // Regular transfer - both parties must be on allowlist
+                assert(contract_state.allowlist.read(from), 'Sender not on allowlist');
+                assert(contract_state.allowlist.read(recipient), 'Recipient not on allowlist');
+            } else if recipient != zero_address {
+                // Minting - recipient must be on allowlist
+                assert(contract_state.allowlist.read(recipient), 'Recipient not on allowlist');
+            }
+            // Burning doesn't require allowlist check
+        }
+
+        fn after_update(
+            ref self: ERC20Component::ComponentState<ContractState>,
+            from: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256
+        ) {}
+    }
+
     const MINTER_ROLE: felt252 = 'MINTER';
     const BURNER_ROLE: felt252 = 'BURNER';
     const PAUSER_ROLE: felt252 = 'PAUSER';
     const ENFORCER_ROLE: felt252 = 'ENFORCER';
     const ERC20ENFORCER_ROLE: felt252 = 'ERC20ENFORCER';
+    const ALLOWLIST_ADMIN_ROLE: felt252 = 'ALLOWLIST_ADMIN';
     const SNAPSHOOTER_ROLE: felt252 = 'SNAPSHOOTER';
     const DOCUMENT_ROLE: felt252 = 'DOCUMENT';
     const EXTRA_INFORMATION_ROLE: felt252 = 'EXTRA_INFORMATION';
-    const CROSS_CHAIN_ROLE: felt252 = 'CROSS_CHAIN';
 
     #[storage]
     struct Storage {
@@ -45,6 +82,10 @@ mod StandardCMTAT {
         token_id: ByteArray,
         paused: bool,
         deactivated: bool,
+        // Allowlist storage
+        allowlist_enabled: bool,
+        allowlist: LegacyMap<ContractAddress, bool>,
+        // Partial token freezing
         frozen_addresses: LegacyMap<ContractAddress, bool>,
         frozen_tokens: LegacyMap<ContractAddress, u256>,
         // Engine addresses
@@ -69,12 +110,17 @@ mod StandardCMTAT {
         Paused: Paused,
         Unpaused: Unpaused,
         Deactivated: Deactivated,
+        AddressAddedToAllowlist: AddressAddedToAllowlist,
+        AddressRemovedFromAllowlist: AddressRemovedFromAllowlist,
+        AllowlistEnabled: AllowlistEnabled,
+        AllowlistDisabled: AllowlistDisabled,
         AddressFrozen: AddressFrozen,
         AddressUnfrozen: AddressUnfrozen,
         TokensFrozen: TokensFrozen,
         TokensUnfrozen: TokensUnfrozen,
         Mint: Mint,
         Burn: Burn,
+        ForcedBurn: ForcedBurn,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -85,11 +131,6 @@ mod StandardCMTAT {
     #[derive(Drop, starknet::Event)]
     struct InformationSet {
         pub new_information: ByteArray,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct TokenIdSet {
-        pub new_token_id: ByteArray,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -105,6 +146,35 @@ mod StandardCMTAT {
     #[derive(Drop, starknet::Event)]
     struct Deactivated {
         pub account: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct AddressAddedToAllowlist {
+        #[key]
+        pub account: ContractAddress,
+        pub added_by: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct TokenIdSet {
+        pub new_token_id: ByteArray,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct AddressRemovedFromAllowlist {
+        #[key]
+        pub account: ContractAddress,
+        pub removed_by: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct AllowlistEnabled {
+        pub enabled_by: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct AllowlistDisabled {
+        pub disabled_by: ContractAddress,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -147,6 +217,14 @@ mod StandardCMTAT {
         pub value: u256,
     }
 
+    #[derive(Drop, starknet::Event)]
+    struct ForcedBurn {
+        #[key]
+        pub from: ContractAddress,
+        pub value: u256,
+        pub admin: ContractAddress,
+    }
+
     #[constructor]
     fn constructor(
         ref self: ContractState,
@@ -166,27 +244,31 @@ mod StandardCMTAT {
         self.access_control._grant_role(PAUSER_ROLE, admin);
         self.access_control._grant_role(ENFORCER_ROLE, admin);
         self.access_control._grant_role(ERC20ENFORCER_ROLE, admin);
+        self.access_control._grant_role(ALLOWLIST_ADMIN_ROLE, admin);
         self.access_control._grant_role(SNAPSHOOTER_ROLE, admin);
         self.access_control._grant_role(DOCUMENT_ROLE, admin);
         self.access_control._grant_role(EXTRA_INFORMATION_ROLE, admin);
-        self.access_control._grant_role(CROSS_CHAIN_ROLE, admin);
 
         self.terms.write("");
         self.information.write("");
         self.token_id.write("");
         self.paused.write(false);
         self.deactivated.write(false);
+        self.allowlist_enabled.write(false);
         self.trusted_forwarder.write(forwarder_irrevocable);
         self.snapshot_engine.write(starknet::contract_address_const::<0>());
         self.document_engine.write(starknet::contract_address_const::<0>());
 
+        // Add recipient to allowlist if initial supply is provided
         if initial_supply > 0 {
+            self.allowlist.write(recipient, true);
+            self.emit(AddressAddedToAllowlist { account: recipient, added_by: admin });
             self.erc20._mint(recipient, initial_supply);
         }
     }
 
     #[abi(embed_v0)]
-    impl StandardCMTATImpl of super::IStandardCMTAT<ContractState> {
+    impl AllowlistCMTATImpl of super::IAllowlistCMTAT<ContractState> {
         // ============ Information Functions ============
         fn terms(self: @ContractState) -> ByteArray {
             self.terms.read()
@@ -273,10 +355,6 @@ mod StandardCMTAT {
             EXTRA_INFORMATION_ROLE
         }
 
-        fn get_cross_chain_role(self: @ContractState) -> felt252 {
-            CROSS_CHAIN_ROLE
-        }
-
         // ============ Version ============
         fn version(self: @ContractState) -> ByteArray {
             "2.0.0"
@@ -307,14 +385,6 @@ mod StandardCMTAT {
                 self.emit(Mint { to, value });
                 i += 1;
             };
-            true
-        }
-
-        fn crosschain_mint(ref self: ContractState, to: ContractAddress, value: u256) -> bool {
-            self.access_control.assert_only_role(CROSS_CHAIN_ROLE);
-            assert(!self.paused(), 'Contract is paused');
-            self.erc20._mint(to, value);
-            self.emit(Mint { to, value });
             true
         }
 
@@ -362,14 +432,6 @@ mod StandardCMTAT {
                 self.emit(Burn { from, value });
                 i += 1;
             };
-            true
-        }
-
-        fn crosschain_burn(ref self: ContractState, from: ContractAddress, value: u256) -> bool {
-            self.access_control.assert_only_role(CROSS_CHAIN_ROLE);
-            assert(!self.paused(), 'Contract is paused');
-            self.erc20._burn(from, value);
-            self.emit(Burn { from, value });
             true
         }
 
@@ -474,51 +536,59 @@ mod StandardCMTAT {
             }
         }
 
-        // ============ Transfer Validation ============
-        fn restriction_code(self: @ContractState, from: ContractAddress, to: ContractAddress, value: u256) -> u8 {
-            // Check if contract is paused
-            if self.paused() {
-                return 2; // Contract paused
+        // ============ Allowlist Functions ============
+        fn enable_allowlist(ref self: ContractState, status: bool) -> bool {
+            self.access_control.assert_only_role(ALLOWLIST_ADMIN_ROLE);
+            self.allowlist_enabled.write(status);
+            if status {
+                self.emit(AllowlistEnabled { enabled_by: get_caller_address() });
+            } else {
+                self.emit(AllowlistDisabled { disabled_by: get_caller_address() });
             }
-
-            // Check if contract is deactivated
-            if self.deactivated() {
-                return 3; // Contract deactivated
-            }
-
-            // Check if addresses are frozen
-            if self.is_frozen(from) || self.is_frozen(to) {
-                return 1; // Address frozen
-            }
-
-            // Check active balance for sender (only if not a mint operation)
-            if from != starknet::contract_address_const::<0>() {
-                let active_balance = self.get_active_balance_of(from);
-                if active_balance < value {
-                    return 4; // Insufficient active balance
-                }
-            }
-
-            0 // No restriction
+            true
         }
 
-        fn message_for_transfer_restriction(self: @ContractState, restriction_code: u8) -> ByteArray {
-            if restriction_code == 0 {
-                return "No restriction";
+        fn is_allowlist_enabled(self: @ContractState) -> bool {
+            self.allowlist_enabled.read()
+        }
+
+        fn set_address_allowlist(ref self: ContractState, account: ContractAddress, status: bool) -> bool {
+            self.access_control.assert_only_role(ALLOWLIST_ADMIN_ROLE);
+            self.allowlist.write(account, status);
+            let caller = get_caller_address();
+            if status {
+                self.emit(AddressAddedToAllowlist { account, added_by: caller });
+            } else {
+                self.emit(AddressRemovedFromAllowlist { account, removed_by: caller });
             }
-            if restriction_code == 1 {
-                return "Address is frozen";
-            }
-            if restriction_code == 2 {
-                return "Contract is paused";
-            }
-            if restriction_code == 3 {
-                return "Contract is deactivated";
-            }
-            if restriction_code == 4 {
-                return "Insufficient active balance";
-            }
-            "Unknown restriction"
+            true
+        }
+
+        fn batch_set_address_allowlist(ref self: ContractState, accounts: Span<ContractAddress>, statuses: Span<bool>) -> bool {
+            self.access_control.assert_only_role(ALLOWLIST_ADMIN_ROLE);
+            assert(accounts.len() == statuses.len(), 'Arrays length mismatch');
+            
+            let caller = get_caller_address();
+            let mut i: u32 = 0;
+            loop {
+                if i >= accounts.len() {
+                    break;
+                }
+                let account = *accounts.at(i);
+                let status = *statuses.at(i);
+                self.allowlist.write(account, status);
+                if status {
+                    self.emit(AddressAddedToAllowlist { account, added_by: caller });
+                } else {
+                    self.emit(AddressRemovedFromAllowlist { account, removed_by: caller });
+                }
+                i += 1;
+            };
+            true
+        }
+
+        fn is_allowlisted(self: @ContractState, account: ContractAddress) -> bool {
+            self.allowlist.read(account)
         }
 
         // ============ Engine Management ============
@@ -549,39 +619,13 @@ mod StandardCMTAT {
 
         // ============ Utility Functions ============
         fn token_type(self: @ContractState) -> ByteArray {
-            "Standard CMTAT"
+            "Allowlist CMTAT"
         }
-    }
-
-    // ERC20 Hooks for transfer restrictions
-    impl ERC20HooksImpl of ERC20Component::ERC20HooksTrait<ContractState> {
-        fn before_update(
-            ref self: ERC20Component::ComponentState<ContractState>,
-            from: ContractAddress,
-            recipient: ContractAddress,
-            amount: u256
-        ) {
-            let contract_state = ERC20Component::HasComponent::get_contract(@self);
-            let zero_address: ContractAddress = starknet::contract_address_const::<0>();
-
-            // Only check transfers (not mint/burn)
-            if from != zero_address && recipient != zero_address {
-                let restriction = contract_state.restriction_code(from, recipient, amount);
-                assert(restriction == 0, 'Transfer restricted');
-            }
-        }
-
-        fn after_update(
-            ref self: ERC20Component::ComponentState<ContractState>,
-            from: ContractAddress,
-            recipient: ContractAddress,
-            amount: u256
-        ) {}
     }
 }
 
 #[starknet::interface]
-trait IStandardCMTAT<TContractState> {
+trait IAllowlistCMTAT<TContractState> {
     // Information
     fn terms(self: @TContractState) -> ByteArray;
     fn set_terms(ref self: TContractState, new_terms: ByteArray) -> bool;
@@ -603,7 +647,6 @@ trait IStandardCMTAT<TContractState> {
     fn get_snapshooter_role(self: @TContractState) -> felt252;
     fn get_document_role(self: @TContractState) -> felt252;
     fn get_extra_information_role(self: @TContractState) -> felt252;
-    fn get_cross_chain_role(self: @TContractState) -> felt252;
     
     // Version
     fn version(self: @TContractState) -> ByteArray;
@@ -611,14 +654,12 @@ trait IStandardCMTAT<TContractState> {
     // Minting
     fn mint(ref self: TContractState, to: ContractAddress, value: u256) -> bool;
     fn batch_mint(ref self: TContractState, tos: Span<ContractAddress>, values: Span<u256>) -> bool;
-    fn crosschain_mint(ref self: TContractState, to: ContractAddress, value: u256) -> bool;
     fn burn_and_mint(ref self: TContractState, from: ContractAddress, to: ContractAddress, value: u256) -> bool;
     
     // Burning
     fn burn(ref self: TContractState, value: u256) -> bool;
     fn burn_from(ref self: TContractState, from: ContractAddress, value: u256) -> bool;
     fn batch_burn(ref self: TContractState, accounts: Span<ContractAddress>, values: Span<u256>) -> bool;
-    fn crosschain_burn(ref self: TContractState, from: ContractAddress, value: u256) -> bool;
     
     // Pause
     fn paused(self: @TContractState) -> bool;
@@ -636,9 +677,12 @@ trait IStandardCMTAT<TContractState> {
     fn get_frozen_tokens(self: @TContractState, account: ContractAddress) -> u256;
     fn get_active_balance_of(self: @TContractState, account: ContractAddress) -> u256;
     
-    // Transfer Validation
-    fn restriction_code(self: @TContractState, from: ContractAddress, to: ContractAddress, value: u256) -> u8;
-    fn message_for_transfer_restriction(self: @TContractState, restriction_code: u8) -> ByteArray;
+    // Allowlist
+    fn enable_allowlist(ref self: TContractState, status: bool) -> bool;
+    fn is_allowlist_enabled(self: @TContractState) -> bool;
+    fn set_address_allowlist(ref self: TContractState, account: ContractAddress, status: bool) -> bool;
+    fn batch_set_address_allowlist(ref self: TContractState, accounts: Span<ContractAddress>, statuses: Span<bool>) -> bool;
+    fn is_allowlisted(self: @TContractState, account: ContractAddress) -> bool;
     
     // Engines
     fn set_snapshot_engine(ref self: TContractState, snapshot_engine_: ContractAddress) -> bool;
